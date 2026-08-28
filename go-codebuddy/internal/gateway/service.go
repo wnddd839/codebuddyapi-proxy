@@ -123,6 +123,43 @@ type CompleteOptions struct {
 	RefreshRetry bool
 }
 
+// chatOptionsFromAccount builds upstream options using the account as the
+// source of truth for region. Proxy process location / global CODEBUDDY_BASE_URL
+// must not send a domestic account to www.codebuddy.ai (or the reverse).
+func (s *Service) chatOptionsFromAccount(account accounts.Account, opts CompleteOptions) provider.ChatOptions {
+	site := config.NormalizeSite(strutil.First(account.Site, s.Cfg.Site))
+	internet := strutil.First(account.InternetEnvironment, s.Cfg.InternetEnvironment)
+	baseURL := strings.TrimSpace(account.BaseURL)
+	if baseURL == "" {
+		if site == "domestic" {
+			baseURL = "https://www.codebuddy.cn"
+		} else {
+			baseURL = "https://www.codebuddy.ai"
+		}
+	}
+	return provider.ChatOptions{
+		Model:               opts.Model,
+		Messages:            opts.Messages,
+		Stream:              opts.Stream,
+		Tools:               opts.Tools,
+		ToolChoice:          opts.ToolChoice,
+		BearerToken:         account.BearerToken,
+		UserID:              account.AuthStatus.UserID,
+		BaseURL:             baseURL,
+		Site:                site,
+		InternetEnvironment: internet,
+		// Prefer account APIEndpoint only — process-wide endpoint can point at the wrong region.
+		APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
+		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Cfg.ChatCompletionsPath),
+		// Domain intentionally omitted: X-Domain is derived from the chat endpoint host.
+		EnterpriseID:       account.EnterpriseID,
+		TenantID:           account.TenantID,
+		DepartmentFullName: account.DepartmentFullName,
+		OnDelta:            opts.OnDelta,
+		OnEvent:            opts.OnEvent,
+	}
+}
+
 type CompleteResult struct {
 	provider.Result
 	Account   accounts.Summary `json:"account"`
@@ -130,9 +167,10 @@ type CompleteResult struct {
 }
 
 func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (CompleteResult, error) {
+	// Do not filter the pool by proxy-wide CODEBUDDY_SITE. The selected account's
+	// own site decides domestic vs global upstream, independent of proxy IP/VPN.
 	selection, err := s.Pool.Select(accounts.SelectOptions{
 		AccountID:  opts.AccountID,
-		Site:       strings.TrimSpace(s.Cfg.Site),
 		ExcludeIDs: opts.ExcludeIDs,
 	})
 	if err != nil {
@@ -143,27 +181,14 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 		return CompleteResult{}, err
 	}
 	account := selection.Account
-	result, err := s.Provider.Complete(ctx, provider.ChatOptions{
-		Model:               opts.Model,
-		Messages:            opts.Messages,
-		Stream:              opts.Stream,
-		Tools:               opts.Tools,
-		ToolChoice:          opts.ToolChoice,
-		BearerToken:         account.BearerToken,
-		UserID:              account.AuthStatus.UserID,
-		BaseURL:             strutil.First(account.BaseURL, s.Cfg.BaseURL),
-		Site:                strutil.First(account.Site, s.Cfg.Site),
-		InternetEnvironment: strutil.First(account.InternetEnvironment, s.Cfg.InternetEnvironment),
-		APIEndpoint:         strutil.First(account.APIEndpoint, s.Cfg.APIEndpoint),
-		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Cfg.ChatCompletionsPath),
-		Domain:              account.Domain,
-		EnterpriseID:        account.EnterpriseID,
-		TenantID:            account.TenantID,
-		DepartmentFullName:  account.DepartmentFullName,
-		OnDelta:             opts.OnDelta,
-		OnEvent:             opts.OnEvent,
-	})
+	chatOpts := s.chatOptionsFromAccount(account, opts)
+	result, err := s.Provider.Complete(ctx, chatOpts)
 	if err != nil {
+		// Client closed the SSE / HTTP request — not an account/upstream failure.
+		if errors.Is(err, context.Canceled) || strings.Contains(strings.ToLower(err.Error()), "context canceled") {
+			s.Log.Info("codebuddy request canceled by client", "accountId", account.ID, "model", opts.Model)
+			return CompleteResult{}, err
+		}
 		if s.shouldRetryNextAccount(err, selection, opts) {
 			s.Log.Warn("retrying codebuddy request with next account", "accountId", account.ID, "error", err.Error())
 			next := append(append([]string{}, opts.ExcludeIDs...), account.ID)
@@ -243,7 +268,10 @@ func (s *Service) shouldRefreshAfterFailure(err error, selection accounts.Select
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "11140") || strings.Contains(msg, "request illegal") {
+	// Policy / request-shape errors are not fixed by refreshing credentials.
+	if strings.Contains(msg, "11140") || strings.Contains(msg, "request illegal") ||
+		strings.Contains(msg, "11128") || strings.Contains(msg, "unapproved channel") ||
+		strings.Contains(msg, "11101") || strings.Contains(msg, "11102") {
 		return false
 	}
 	re := regexp.MustCompile(`(?i)(?:\b401\b|\b403\b|unauthori[sz]ed|forbidden|token|credential|auth|login|not authenticated|未登录|登录|凭证)`)
@@ -263,6 +291,10 @@ func (s *Service) shouldRetryNextAccount(err error, selection accounts.Selection
 		return false
 	}
 	msg := err.Error()
+	// 11128 is channel/policy — retrying another account with the same client fingerprint rarely helps.
+	if strings.Contains(msg, "11128") || strings.Contains(strings.ToLower(msg), "unapproved channel") {
+		return false
+	}
 	re := regexp.MustCompile(`(?i)11140|request illegal|site mismatch|invalid request`)
 	return re.MatchString(msg)
 }
@@ -290,17 +322,26 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 		}
 	}
 	_ = fresh
+	site := config.NormalizeSite(strutil.First(account.Site, s.Cfg.Site))
+	internet := strutil.First(account.InternetEnvironment, s.Cfg.InternetEnvironment)
+	baseURL := strings.TrimSpace(account.BaseURL)
+	if baseURL == "" {
+		if site == "domestic" {
+			baseURL = "https://www.codebuddy.cn"
+		} else {
+			baseURL = "https://www.codebuddy.ai"
+		}
+	}
 	return s.Models.List(ctx, s.Provider, models.ListOptions{
-		Site:                strutil.First(account.Site, s.Cfg.Site),
-		BaseURL:             strutil.First(account.BaseURL, s.Cfg.BaseURL),
-		InternetEnvironment: strutil.First(account.InternetEnvironment, s.Cfg.InternetEnvironment),
+		Site:                site,
+		BaseURL:             baseURL,
+		InternetEnvironment: internet,
 		BearerToken:         account.BearerToken,
 		UserID:              account.AuthStatus.UserID,
 		EnterpriseID:        account.EnterpriseID,
 		TenantID:            account.TenantID,
 		DepartmentFullName:  account.DepartmentFullName,
-		Domain:              account.Domain,
-		APIEndpoint:         strutil.First(account.APIEndpoint, s.Cfg.APIEndpoint),
+		APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
 		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Cfg.ChatCompletionsPath),
 	}), nil
 }

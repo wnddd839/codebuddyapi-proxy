@@ -15,7 +15,7 @@ const (
 	DefaultTransport           = "protocol_direct"
 	DefaultIDEVersion          = "2.117.2"
 	DefaultRefreshWindow       = 10 * time.Minute
-	DefaultStreamKeepAlive     = 15 * time.Second
+	DefaultStreamKeepAlive     = 5 * time.Second
 	DefaultOAuthSessionTTL     = 15 * time.Minute
 	DefaultHTTPTimeout         = 120 * time.Second
 	DefaultIdleConnTimeout     = 90 * time.Second

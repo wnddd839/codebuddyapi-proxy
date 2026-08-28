@@ -1,8 +1,11 @@
 package openai
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/wnddd839/codebuddy-proxy/internal/provider"
@@ -21,6 +24,48 @@ type ErrorDetail struct {
 
 func NewError(message, typ string) ErrorBody {
 	return ErrorBody{Error: ErrorDetail{Message: message, Type: typ}}
+}
+
+func NewErrorWithCode(message, typ string, code any) ErrorBody {
+	return ErrorBody{Error: ErrorDetail{Message: message, Type: typ, Code: code}}
+}
+
+// ClassifyUpstream maps CodeBuddy upstream failures to OpenAI-ish error types
+// so clients (Orca/ZCode/NewAPI) can distinguish policy vs transport errors.
+func ClassifyUpstream(err error) (typ string, code any) {
+	if err == nil {
+		return "upstream_error", nil
+	}
+	if IsClientCanceled(err) {
+		return "client_disconnected", "context_canceled"
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "11128"), strings.Contains(strings.ToLower(msg), "unapproved channel"):
+		return "permission_error", 11128
+	case strings.Contains(msg, "11101"):
+		return "invalid_request_error", 11101
+	case strings.Contains(msg, "11102"):
+		return "invalid_request_error", 11102
+	case strings.Contains(msg, "11140"), strings.Contains(strings.ToLower(msg), "request illegal"):
+		return "invalid_request_error", 11140
+	default:
+		return "upstream_error", nil
+	}
+}
+
+// IsClientCanceled reports client-side abort (browser/ZCode closed the stream).
+func IsClientCanceled(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context canceled") ||
+		strings.Contains(msg, "request canceled") ||
+		strings.Contains(msg, "client disconnected")
 }
 
 type ChatCompletion struct {
