@@ -30,7 +30,8 @@ func NewClient(cfg config.Config) *Client {
 	// long agent turns / slow models mid-SSE and make clients "reconnect".
 	headerTimeout := cfg.HTTPTimeout
 	if headerTimeout <= 0 {
-		headerTimeout = 60 * time.Second
+		// Slow models (hy4-preview) can sit >60s before first upstream byte.
+		headerTimeout = 180 * time.Second
 	}
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -135,24 +136,48 @@ func IsDomestic(site, internetEnvironment, baseURL string) bool {
 		strings.Contains(host, "codebuddy.cn") || strings.Contains(host, "copilot.tencent.com")
 }
 
-func ResolveProtocolDirectBaseURL(opts ChatOptions) string {
-	configured := NormalizeBaseURL(opts.BaseURL)
-	if configured != "" {
-		lower := strings.ToLower(configured)
-		if strings.Contains(lower, "www.codebuddy.cn") || strings.Contains(lower, ".codebuddy.cn") {
-			return "https://copilot.tencent.com"
-		}
-		return configured
+// RegionOf returns "domestic" or "global" for protocol_direct routing.
+// Account site / internetEnvironment win over whatever host the proxy process
+// happens to run on (VPN / overseas VPS must not flip a CN account overseas).
+func RegionOf(opts ChatOptions) string {
+	if IsDomestic(opts.Site, opts.InternetEnvironment, "") {
+		return "domestic"
 	}
-	if IsDomestic(opts.Site, opts.InternetEnvironment, opts.BaseURL) {
+	// Fall back to BaseURL host only when site/env are unset/ambiguous.
+	if strings.TrimSpace(opts.Site) == "" && strings.TrimSpace(opts.InternetEnvironment) == "" &&
+		IsDomestic("", "", opts.BaseURL) {
+		return "domestic"
+	}
+	return "global"
+}
+
+func ResolveProtocolDirectBaseURL(opts ChatOptions) string {
+	if RegionOf(opts) == "domestic" {
 		return "https://copilot.tencent.com"
+	}
+	configured := NormalizeBaseURL(opts.BaseURL)
+	if configured != "" && !IsDomestic("", "", configured) {
+		return configured
 	}
 	return "https://www.codebuddy.ai"
 }
 
+func endpointMatchesRegion(endpoint, region string) bool {
+	lower := strings.ToLower(endpoint)
+	domestic := strings.Contains(lower, "copilot.tencent.com") || strings.Contains(lower, "codebuddy.cn")
+	if region == "domestic" {
+		return domestic
+	}
+	return !domestic && endpoint != ""
+}
+
 func ResolveProtocolDirectEndpoint(opts ChatOptions) string {
+	region := RegionOf(opts)
 	if endpoint := strings.TrimRight(strings.TrimSpace(opts.APIEndpoint), "/"); endpoint != "" {
-		return endpoint
+		// Honor explicit APIEndpoint only when it agrees with the account region.
+		if endpointMatchesRegion(endpoint, region) {
+			return endpoint
+		}
 	}
 	base := ResolveProtocolDirectBaseURL(opts)
 	path := strings.TrimSpace(opts.ChatCompletionsPath)
@@ -168,21 +193,71 @@ func ResolveProtocolDirectEndpoint(opts ChatOptions) string {
 	return base + path
 }
 
+// ResolveProtocolDirectDomain returns the X-Domain value for chat.
+// Official CodeBuddy CLI derives this from the chat endpoint host, not from
+// the portal/login host stored on the account (often www.codebuddy.cn).
 func ResolveProtocolDirectDomain(opts ChatOptions) string {
-	if domain := strings.TrimSpace(opts.Domain); domain != "" {
-		return domain
+	if host := authorityHost(ResolveProtocolDirectEndpoint(opts)); host != "" {
+		return host
 	}
-	endpoint := ResolveProtocolDirectEndpoint(opts)
-	if rest, ok := strings.CutPrefix(endpoint, "https://"); ok {
-		if i := strings.IndexByte(rest, '/'); i >= 0 {
-			return rest[:i]
-		}
-		return rest
+	if domain := strings.TrimSpace(opts.Domain); domain != "" && !isPortalDomain(domain) {
+		return domain
 	}
 	if IsDomestic(opts.Site, opts.InternetEnvironment, opts.BaseURL) {
 		return "copilot.tencent.com"
 	}
 	return "www.codebuddy.ai"
+}
+
+func authorityHost(endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	for _, prefix := range []string{"https://", "http://"} {
+		if rest, ok := strings.CutPrefix(endpoint, prefix); ok {
+			host, _, _ := strings.Cut(rest, "/")
+			return strings.TrimSpace(host)
+		}
+	}
+	return ""
+}
+
+func isPortalDomain(domain string) bool {
+	host := strings.ToLower(strings.TrimSpace(domain))
+	switch host {
+	case "www.codebuddy.cn", "codebuddy.cn", "www.codebuddy.ai", "codebuddy.ai":
+		return true
+	default:
+		return false
+	}
+}
+
+// NormalizeToolChoice converts OpenAI-shaped tool_choice values into the
+// string form CodeBuddy protocol_direct accepts. Object forms cause upstream
+// 11101 ("cannot unmarshal object into ... tool_choice of type string").
+func NormalizeToolChoice(value any) any {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" || trimmed == "<nil>" {
+			return nil
+		}
+		return trimmed
+	case map[string]any:
+		typ := strings.ToLower(strings.TrimSpace(fmt.Sprint(v["type"])))
+		switch typ {
+		case "auto", "none", "required":
+			return typ
+		case "function":
+			// Forced-function object is not accepted upstream; keep tools usable.
+			return "auto"
+		default:
+			if typ != "" && typ != "<nil>" {
+				return typ
+			}
+		}
+	}
+	return nil
 }
 
 func stainlessOS() string {
@@ -212,30 +287,25 @@ func randomUUID() string {
 
 func (c *Client) BuildProtocolDirectHeaders(opts ChatOptions) http.Header {
 	requestID := randomHex(16)
+	messageID := randomHex(16)
 	ideVersion := strutil.First(c.IDEVersion, config.DefaultIDEVersion)
 	headers := http.Header{}
 	headers.Set("Accept", "text/event-stream, application/json")
 	headers.Set("Content-Type", "application/json")
 	headers.Set("X-Requested-With", "XMLHttpRequest")
-	headers.Set("X-Stainless-Arch", "x64")
-	headers.Set("X-Stainless-Lang", "go")
-	headers.Set("X-Stainless-OS", stainlessOS())
-	headers.Set("X-Stainless-Package-Version", "5.10.1")
-	headers.Set("X-Stainless-Retry-Count", "0")
-	headers.Set("X-Stainless-Runtime", "go")
-	headers.Set("X-Stainless-Runtime-Version", runtime.Version())
-	headers.Set("X-Conversation-Id", randomUUID())
-	headers.Set("X-Conversation-Request-Id", requestID)
-	headers.Set("X-Conversation-Message-Id", randomHex(16))
-	headers.Set("X-Request-Id", requestID)
 	headers.Set("X-Agent-Intent", "craft")
-	headers.Set("X-Ide-Type", "CLI")
-	headers.Set("X-Ide-Name", "CLI")
-	headers.Set("X-Ide-Version", ideVersion)
+	headers.Set("X-IDE-Type", "CLI")
+	headers.Set("X-IDE-Name", "CLI")
+	headers.Set("X-IDE-Version", ideVersion)
 	headers.Set("X-Domain", ResolveProtocolDirectDomain(opts))
-	headers.Set("User-Agent", fmt.Sprintf("CLI/%s CodeBuddy/%s", ideVersion, ideVersion))
+	headers.Set("User-Agent", fmt.Sprintf("CLI/%s", ideVersion))
 	headers.Set("X-Product", "SaaS")
 	headers.Set("X-User-Id", strutil.First(opts.UserID, "anonymous"))
+	// Official CLI uses *-ID suffix (uppercase).
+	headers.Set("X-Conversation-ID", randomUUID())
+	headers.Set("X-Conversation-Request-ID", requestID)
+	headers.Set("X-Conversation-Message-ID", messageID)
+	headers.Set("X-Request-ID", messageID)
 	if opts.EnterpriseID != "" {
 		headers.Set("X-Enterprise-Id", opts.EnterpriseID)
 		headers.Set("X-Tenant-Id", strutil.First(opts.TenantID, opts.EnterpriseID))
@@ -255,13 +325,24 @@ func (c *Client) BuildProtocolDirectHeaders(opts ChatOptions) http.Header {
 	return headers
 }
 
+func NormalizeMessageRole(role string) string {
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch role {
+	case "", "human", "ai":
+		return "user"
+	case "developer":
+		// OpenAI/ZCode "developer" is rejected by CodeBuddy upstream as 11128
+		// ("unapproved channel"). Map to system instructions.
+		return "system"
+	default:
+		return role
+	}
+}
+
 func EnsureUpstreamMessages(messages []map[string]any) []map[string]any {
 	out := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
-		role := strings.TrimSpace(fmt.Sprint(message["role"]))
-		if role == "" {
-			role = "user"
-		}
+		role := NormalizeMessageRole(fmt.Sprint(message["role"]))
 		item := map[string]any{"role": role}
 		if toolCalls, ok := message["tool_calls"]; ok {
 			item["tool_calls"] = toolCalls
@@ -333,9 +414,13 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 	}
 	// CodeBuddy protocol_direct rejects non-stream chat (11101). Always stream upstream;
 	// callers that want a JSON response still get an aggregated Turn via readSSE.
+	messages := EnsureUpstreamMessages(opts.Messages)
+	if len(messages) == 0 {
+		return Result{}, fmt.Errorf("CodeBuddy chat completion failed: no valid messages after normalization")
+	}
 	body := map[string]any{
 		"model":    model,
-		"messages": EnsureUpstreamMessages(opts.Messages),
+		"messages": messages,
 		"stream":   true,
 	}
 	body["stream_options"] = map[string]any{"include_usage": true}
@@ -345,14 +430,16 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 	if opts.Tools != nil {
 		body["tools"] = opts.Tools
 	}
-	if opts.ToolChoice != nil {
-		body["tool_choice"] = opts.ToolChoice
+	if choice := NormalizeToolChoice(opts.ToolChoice); choice != nil {
+		body["tool_choice"] = choice
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, err
 	}
 	endpoint := ResolveProtocolDirectEndpoint(opts)
+	domain := ResolveProtocolDirectDomain(opts)
+	region := RegionOf(opts)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return Result{}, err
@@ -361,13 +448,13 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("CodeBuddy chat completion transport error: %w [region=%s site=%s endpoint=%s domain=%s model=%s]", err, region, config.NormalizeSite(opts.Site), endpoint, domain, model)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return Result{}, fmt.Errorf("CodeBuddy chat completion failed with %d: %s", resp.StatusCode, extractErrorMessage(raw, resp.StatusCode))
+		return Result{}, fmt.Errorf("CodeBuddy chat completion failed with %d: %s [region=%s site=%s endpoint=%s domain=%s model=%s]", resp.StatusCode, extractErrorMessage(raw, resp.StatusCode), region, config.NormalizeSite(opts.Site), endpoint, domain, model)
 	}
 
 	result, err := c.readSSE(resp.Body, opts)
