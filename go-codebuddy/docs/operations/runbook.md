@@ -33,6 +33,11 @@ curl -fsS http://127.0.0.1:32126/health
 | 无模型 | 未 OAuth；看 accounts path |
 | 上游 401/403 | 点管理台 refresh-token 或重新登录 |
 | 11140 / request illegal | site 与账号不匹配；检查 `CODEBUDDY_SITE` |
+| 11128 / unapproved channel | 常见根因：客户端发了 `role=developer`（ZCode/OpenAI 新角色），上游会当成非法渠道。网关已映射为 `system`。也检查账号 `site=domestic` 时 endpoint 为 `copilot.tencent.com`（错误信息含 `[region=... endpoint=...]`） |
+| 国内账号却打到海外 / 反过来 | 已按**账号 site** 选端点，不再看反代机器 IP，也不再被进程级 `CODEBUDDY_BASE_URL` 带跑偏 |
+| 11101 / tool_choice unmarshal | 客户端传了对象型 `tool_choice`；网关会归一成字符串（`auto`/`none`/`required`） |
+| 11102 / model service not found | 模型在列表里但上游无服务；换 `auto` 或其它可用模型 |
+| Turn execution failed / reason=unknown | 看管理台 `stats.lastError`；多为上游 11128/11101 被客户端包装 |
 
 ## 资源占用参考
 

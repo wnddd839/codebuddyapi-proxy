@@ -203,8 +203,14 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		ToolChoice: body.ToolChoice,
 	})
 	if err != nil {
+		if openai.IsClientCanceled(err) {
+			// Client aborted before/during non-stream aggregation — not a gateway fault.
+			finish(true, 0, 0, 0, 0, "")
+			return
+		}
 		finish(false, 0, 0, 0, 0, err.Error())
-		httputil.WriteJSON(w, http.StatusBadGateway, openai.NewError(err.Error(), "upstream_error"))
+		typ, code := openai.ClassifyUpstream(err)
+		httputil.WriteJSON(w, http.StatusBadGateway, openai.NewErrorWithCode(err.Error(), typ, code))
 		return
 	}
 	finish(true, len(result.Turn.Text), result.Bytes, int64(result.EventCount), int64(result.DeltaCount), "")
@@ -266,7 +272,8 @@ func (s *Server) streamChat(
 
 	keepAlive := s.Cfg.StreamKeepAlive
 	if keepAlive <= 0 {
-		keepAlive = 15 * time.Second
+		// Frequent enough that ZCode/NewAPI do not treat long upstream TTFB as a hang.
+		keepAlive = 5 * time.Second
 	}
 	keepAliveStop := make(chan struct{})
 	go func() {
@@ -326,14 +333,26 @@ func (s *Server) streamChat(
 		},
 	})
 	if err != nil {
+		if openai.IsClientCanceled(err) {
+			// ZCode/browser often abort slow models (hy4-preview) and retry —
+			// that surfaces as context canceled, not an upstream outage.
+			finish(true, streamedChars, 0, 0, 0, "")
+			writeLocked(func() { done = true })
+			return
+		}
 		finish(false, streamedChars, 0, 0, 0, err.Error())
+		typ, code := openai.ClassifyUpstream(err)
 		writeLocked(func() {
 			if !started {
-				httputil.WriteJSON(w, http.StatusBadGateway, openai.NewError(err.Error(), "upstream_error"))
+				httputil.WriteJSON(w, http.StatusBadGateway, openai.NewErrorWithCode(err.Error(), typ, code))
 				done = true
 				return
 			}
-			_ = httputil.WriteSSE(w, map[string]any{"error": map[string]any{"message": err.Error(), "type": "upstream_error"}})
+			errObj := map[string]any{"message": err.Error(), "type": typ}
+			if code != nil {
+				errObj["code"] = code
+			}
+			_ = httputil.WriteSSE(w, map[string]any{"error": errObj})
 			httputil.WriteSSEDone(w)
 			done = true
 		})
