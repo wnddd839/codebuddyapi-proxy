@@ -14,21 +14,22 @@
 ## Windows 快速开始
 
 1. 下载 `codebuddy-proxy-windows-amd64.exe`
-2. 同目录复制 `.env.example` 为 `.env`，填写管理密码与 API Key
-3. 双击或在终端运行：
+2. 直接运行（会自动读取/创建同目录 `.env`）
 
 ```powershell
 .\codebuddy-proxy-windows-amd64.exe
 ```
 
-4. 打开 Admin：`http://127.0.0.1:32126/direct-admin/`
-5. OpenAI 兼容 API：`http://127.0.0.1:32126/v1`
+3. 打开 Admin：`http://127.0.0.1:32126/direct-admin/`
+4. 复制页面上的 Base URL + API Key 填到 ZCode / NewAPI
+
+> 首次启动若没有 Key，程序会自动生成 `cbp_...` 并写入 `.env`。  
+> 管理台「生成 API Key」也会写入 `.env`；旧 Key 立即失效，客户端必须同步更换。
 
 ## Linux / macOS
 
 ```bash
 chmod +x ./codebuddy-proxy-linux-amd64   # 或 darwin 对应文件
-cp .env.example .env
 ./codebuddy-proxy-linux-amd64
 ```
 

@@ -13,7 +13,7 @@ const (
 	DefaultPort                = 32126
 	DefaultChatCompletionsPath = "/v2/chat/completions"
 	DefaultTransport           = "protocol_direct"
-	DefaultIDEVersion          = "1.0.8"
+	DefaultIDEVersion          = "2.117.2"
 	DefaultRefreshWindow       = 10 * time.Minute
 	DefaultStreamKeepAlive     = 15 * time.Second
 	DefaultOAuthSessionTTL     = 15 * time.Minute
@@ -49,6 +49,9 @@ type Config struct {
 }
 
 func Load() Config {
+	// Best-effort: binary users expect .env next to the exe / cwd to just work.
+	_, _ = LoadDotEnv()
+
 	cfg := Config{
 		Host:                envOr("CODEBUDDY_PROXY_HOST", "CURSOR_DIRECT_HOST", DefaultHost),
 		Port:                envInt("CODEBUDDY_PROXY_PORT", "CURSOR_DIRECT_PORT", DefaultPort),

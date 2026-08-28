@@ -629,10 +629,11 @@ async function refreshClientConfig(){
   return data;
 }
 async function generateApiKey(){
-  if (!confirm('生成新的网关 API Key？旧 Key 将立即失效（仅当前进程）。')) return;
+  if (!confirm('生成新的网关 API Key？\n\n旧 Key 会立即失效，新 Key 会写入 .env 并在重启后继续生效。\n请同步更新 ZCode / NewAPI 等客户端配置。')) return;
   const data = await api('/direct-admin/api/client-config/generate-key', {method:'POST', body:'{}'});
   paintClientConfig(data);
   if (data.apiKey) await copyText(data.apiKey, '新 API Key', $('btnGenerateKey'));
+  if (data.note) showToast(data.note);
 }
 
 async function refreshStatus(){

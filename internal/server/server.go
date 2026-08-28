@@ -362,19 +362,33 @@ func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path str
 		httputil.WriteJSON(w, http.StatusOK, s.clientConfigPayload(publicOrigin))
 		return
 	case path == "/direct-admin/api/client-config/generate-key" && r.Method == http.MethodPost:
-		key, err := generateProxyAPIKey()
+		key, err := GenerateProxyAPIKey()
 		if err != nil {
 			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
-		s.Cfg.APIKey = key
-		s.Cfg.RequireAPIKey = true
+		envPath := config.ResolveEnvFilePath()
+		values := map[string]string{
+			"CODEBUDDY_PROXY_API_KEY":         key,
+			"CODEBUDDY_PROXY_REQUIRE_API_KEY": "true",
+		}
 		if strings.TrimSpace(s.Cfg.AdminPassword) == "" {
+			values["CODEBUDDY_PROXY_ADMIN_PASSWORD"] = key
 			s.Cfg.AdminPassword = key
 		}
+		if err := config.UpsertEnvFile(envPath, values); err != nil {
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+				"ok":    false,
+				"error": "API Key 已生成但写入 .env 失败: " + err.Error(),
+			})
+			return
+		}
+		s.Cfg.APIKey = key
+		s.Cfg.RequireAPIKey = true
 		payload := s.clientConfigPayload(publicOrigin)
 		payload["generated"] = true
-		payload["note"] = "已在当前进程生效；重启后需写入 CODEBUDDY_PROXY_API_KEY 才能持久化。"
+		payload["envFile"] = envPath
+		payload["note"] = "新 API Key 已写入 " + envPath + "，重启后仍然有效。请同步更新 ZCode / NewAPI 等客户端里的 Key。"
 		httputil.WriteJSON(w, http.StatusOK, payload)
 		return
 	case path == "/direct-admin/api/codebuddy/status" && r.Method == http.MethodGet:
@@ -657,7 +671,8 @@ func (s *Server) clientConfigPayload(publicOrigin string) map[string]any {
 	}
 }
 
-func generateProxyAPIKey() (string, error) {
+// GenerateProxyAPIKey creates a gateway API key (cbp_...).
+func GenerateProxyAPIKey() (string, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
