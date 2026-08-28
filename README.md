@@ -32,7 +32,7 @@
 用你自己的 CodeBuddy 账号（OAuth），对外提供标准 OpenAI 兼容接口。  
 管理台里加账号、看 Credits、刷模型；客户端 / NewAPI 只认 `/v1`。
 
-> 本项目**只做 CodeBuddy**。不是 Cursor 反代，也不是多厂商聚合网关。
+> release传不上去，去产品页可以下载二进制打包。
 
 仅限你拥有授权、且符合服务条款与合规要求的场景。  
 **不要**把 token、管理密码、API Key 提交进仓库。
