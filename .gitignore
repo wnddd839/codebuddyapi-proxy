@@ -1,0 +1,11 @@
+bin/
+*.exe
+!go-codebuddy/releases/*.exe
+*.test
+*.out
+.env
+*.log
+.DS_Store
+node_modules/
+go-codebuddy/bin/
+go-codebuddy/.env

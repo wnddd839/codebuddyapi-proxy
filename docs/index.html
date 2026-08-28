@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CodeBuddy Proxy — CodeBuddy 的 OpenAI 兼容反代</title>
+  <meta name="description" content="CodeBuddy Proxy：Go 原生 CodeBuddy 反代。协议直连、OAuth、账号池、真实 Credits、OpenAI 兼容 /v1，可接 NewAPI。" />
+  <meta property="og:title" content="CodeBuddy Proxy" />
+  <meta property="og:description" content="把 CodeBuddy 变成 OpenAI 兼容的 /v1 渠道。只做 CodeBuddy，不做多厂商聚合。" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="./logo.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0e1110;
+      --bg-elev: #161b19;
+      --ink: #f2efe6;
+      --muted: #9aa39a;
+      --line: rgba(242, 239, 230, 0.1);
+      --accent: #e88a4a;
+      --teal: #5ec4a8;
+      --max: 1080px;
+      --display: "Fraunces", Georgia, serif;
+      --sans: "Sora", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { width: min(100% - 2rem, var(--max)); margin-inline: auto; }
+
+    .noise {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .nav {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: 5;
+      padding: 1.25rem 0;
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .brand img { width: 28px; height: 28px; }
+    .nav-links {
+      display: flex;
+      gap: 1.1rem;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 500;
+    }
+    .nav-links a:hover { color: var(--ink); }
+    .pill {
+      padding: 0.5rem 0.9rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink) !important;
+      transition: border-color .2s, background .2s;
+    }
+    .pill:hover { border-color: rgba(242,239,230,.35); background: rgba(255,255,255,.04); }
+
+    .hero {
+      position: relative;
+      min-height: 100svh;
+      display: grid;
+      align-items: end;
+      padding: 7rem 0 4.25rem;
+      isolation: isolate;
+      overflow: hidden;
+    }
+    .hero-plane {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(ellipse 55% 50% at 85% 15%, rgba(232,138,74,.28), transparent 55%),
+        radial-gradient(ellipse 45% 40% at 8% 85%, rgba(94,196,168,.14), transparent 50%),
+        linear-gradient(160deg, #0e1110 0%, #121816 45%, #0c0f0e 100%);
+    }
+    .hero-plane::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(rgba(242,239,230,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(242,239,230,.035) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(ellipse 75% 65% at 60% 35%, #000 10%, transparent 70%);
+      animation: drift 32s linear infinite;
+    }
+    @keyframes drift {
+      from { transform: translate3d(0,0,0); }
+      to { transform: translate3d(0,72px,0); }
+    }
+    .hero h1 {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: clamp(3.2rem, 10vw, 6.4rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+      max-width: 10ch;
+      margin-bottom: 1.15rem;
+      opacity: 0;
+      transform: translateY(24px);
+      animation: up .85s cubic-bezier(.22,1,.36,1) .08s forwards;
+    }
+    .hero h1 span {
+      display: block;
+      color: var(--accent);
+      font-style: italic;
+      font-weight: 500;
+    }
+    .hero-lead {
+      max-width: 32rem;
+      color: var(--muted);
+      font-size: clamp(1rem, 2vw, 1.15rem);
+      margin-bottom: 1.85rem;
+      opacity: 0;
+      transform: translateY(20px);
+      animation: up .85s cubic-bezier(.22,1,.36,1) .22s forwards;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .7rem;
+      opacity: 0;
+      transform: translateY(16px);
+      animation: up .85s cubic-bezier(.22,1,.36,1) .36s forwards;
+    }
+    @keyframes up { to { opacity: 1; transform: none; } }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: .85rem 1.2rem;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: .92rem;
+      transition: transform .2s, background .2s, border-color .2s;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-solid { background: var(--ink); color: var(--bg); }
+    .btn-solid:hover { background: #fff; }
+    .btn-line { border: 1px solid var(--line); color: var(--ink); }
+    .btn-line:hover { border-color: rgba(242,239,230,.4); }
+
+    section {
+      padding: 5rem 0;
+      border-top: 1px solid var(--line);
+    }
+    .kicker {
+      font-size: .72rem;
+      font-weight: 600;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: .75rem;
+    }
+    .title {
+      font-family: var(--display);
+      font-size: clamp(2rem, 4.2vw, 2.85rem);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      margin-bottom: .75rem;
+      max-width: 14ch;
+    }
+    .desc {
+      color: var(--muted);
+      max-width: 34rem;
+      margin-bottom: 2.25rem;
+      font-size: 1.02rem;
+    }
+
+    .rails { display: grid; gap: 0; border-top: 1px solid var(--line); }
+    .rail {
+      display: grid;
+      grid-template-columns: 3.5rem 1fr;
+      gap: 1rem;
+      padding: 1.35rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .rail b {
+      font-family: var(--display);
+      font-size: 1.35rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .rail h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: .3rem; letter-spacing: -0.01em; }
+    .rail p { color: var(--muted); font-size: .95rem; max-width: 38rem; }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 2.5rem;
+      align-items: center;
+    }
+    @media (max-width: 840px) {
+      .split { grid-template-columns: 1fr; }
+      .nav-links a:not(.pill) { display: none; }
+    }
+
+    .panel {
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1.25rem 1.3rem;
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: .8rem;
+      line-height: 1.7;
+      color: #d8d3c6;
+      overflow-x: auto;
+    }
+    .panel .dim { color: #6f766f; }
+    .panel .hot { color: var(--accent); }
+
+    .dl-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .92rem;
+      margin-top: .5rem;
+    }
+    .dl-table th, .dl-table td {
+      text-align: left;
+      padding: .85rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .dl-table th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+    .dl-table a { color: var(--teal); text-decoration: underline; text-underline-offset: 3px; }
+    .dl-table a:hover { color: var(--ink); }
+
+    .note {
+      margin-top: 1.25rem;
+      padding: 1rem 1.1rem;
+      border-left: 3px solid var(--accent);
+      background: rgba(232,138,74,.08);
+      color: var(--muted);
+      font-size: .92rem;
+      max-width: 36rem;
+    }
+    .note strong { color: var(--ink); font-weight: 600; }
+
+    .cta {
+      background:
+        radial-gradient(ellipse 50% 80% at 100% 0%, rgba(232,138,74,.16), transparent 55%),
+        var(--bg);
+    }
+    .cta .title { max-width: 16ch; }
+    .cta-row { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 1.5rem; }
+
+    footer {
+      padding: 2rem 0 2.75rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .85rem;
+    }
+    .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .8rem; }
+    footer a { text-decoration: underline; text-underline-offset: 3px; }
+    footer a:hover { color: var(--ink); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .hero h1, .hero-lead, .hero-actions { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="./">
+        <img src="./logo.svg" alt="" />
+        CodeBuddy Proxy
+      </a>
+      <nav class="nav-links" aria-label="导航">
+        <a href="#why">能力</a>
+        <a href="#download">下载</a>
+        <a href="#start">开始</a>
+        <a class="pill" href="https://github.com/wnddd839/proxy-codebuddy" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" aria-label="CodeBuddy Proxy">
+      <div class="hero-plane" aria-hidden="true"></div>
+      <div class="wrap">
+        <h1>CodeBuddy <span>Proxy</span></h1>
+        <p class="hero-lead">
+          Go 原生实现。OAuth 登录后协议直连，对外给出标准 OpenAI 兼容 <code>/v1</code>，可直接接 NewAPI。无需安装 Go，下载二进制即可运行。
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-solid" href="#download">下载运行</a>
+          <a class="btn btn-line" href="https://github.com/wnddd839/proxy-codebuddy#快速开始" target="_blank" rel="noopener">快速开始</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="why">
+      <div class="wrap">
+        <p class="kicker">Only CodeBuddy</p>
+        <h2 class="title">一件事做到位</h2>
+        <p class="desc">不是多厂商聚合，也不是 Cursor 网关。这个项目只服务 CodeBuddy 账号 → OpenAI 兼容接口。</p>
+
+        <div class="rails">
+          <article class="rail">
+            <b>01</b>
+            <div>
+              <h3>协议直连</h3>
+              <p>默认 protocol_direct。OAuth 后直连上游，模型列表走 /v3/config，不必再挂 CLI serve。</p>
+            </div>
+          </article>
+          <article class="rail">
+            <b>02</b>
+            <div>
+              <h3>真实 Credits</h3>
+              <p>管理台读官网用量接口，展示剩余 / 总额。一眼知道账号还剩多少。</p>
+            </div>
+          </article>
+          <article class="rail">
+            <b>03</b>
+            <div>
+              <h3>账号池 + 管理台</h3>
+              <p>多账号轮询、启用禁用、刷新 token。写盘有保护，刷新失败不会把账号列表清空。</p>
+            </div>
+          </article>
+          <article class="rail">
+            <b>04</b>
+            <div>
+              <h3>OpenAI 形状</h3>
+              <p>GET /v1/models、POST /v1/chat/completions。NewAPI、自建客户端，按熟悉方式接入。</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="wrap">
+        <p class="kicker">Download</p>
+        <h2 class="title">预编译二进制</h2>
+        <p class="desc">下载对应平台文件，同目录复制 <code>.env.example</code> 为 <code>.env</code> 并填写密码与 API Key。</p>
+        <table class="dl-table">
+          <thead>
+            <tr><th>平台</th><th>文件</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Windows x64</td>
+              <td><a href="https://github.com/wnddd839/proxy-codebuddy/raw/main/go-codebuddy/releases/codebuddy-proxy-windows-amd64.exe">codebuddy-proxy-windows-amd64.exe</a></td>
+            </tr>
+            <tr>
+              <td>Linux x64</td>
+              <td><a href="https://github.com/wnddd839/proxy-codebuddy/raw/main/go-codebuddy/releases/codebuddy-proxy-linux-amd64">codebuddy-proxy-linux-amd64</a></td>
+            </tr>
+            <tr>
+              <td>macOS Apple Silicon</td>
+              <td><a href="https://github.com/wnddd839/proxy-codebuddy/raw/main/go-codebuddy/releases/codebuddy-proxy-darwin-arm64">codebuddy-proxy-darwin-arm64</a></td>
+            </tr>
+            <tr>
+              <td>macOS Intel</td>
+              <td><a href="https://github.com/wnddd839/proxy-codebuddy/raw/main/go-codebuddy/releases/codebuddy-proxy-darwin-amd64">codebuddy-proxy-darwin-amd64</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="desc" style="margin-top:1.5rem;margin-bottom:0;font-size:.9rem;">
+          配置模板：<a href="https://github.com/wnddd839/proxy-codebuddy/raw/main/go-codebuddy/releases/.env.example" style="color:var(--teal);text-decoration:underline;">.env.example</a>
+          · 校验 <a href="https://github.com/wnddd839/proxy-codebuddy/raw/main/go-codebuddy/releases/SHA256SUMS.txt" style="color:var(--teal);text-decoration:underline;">SHA256SUMS.txt</a>
+        </p>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="wrap split">
+        <div>
+          <p class="kicker">Get started</p>
+          <h2 class="title">三步跑起来</h2>
+          <p class="desc">下载 exe（或对应平台二进制）、写 <code>.env</code>、运行。默认国内站 codebuddy.cn。也可从源码 <code>go run</code>。</p>
+          <div class="note">
+            <strong>范围说明：</strong>本项目只做 CodeBuddy 反代，不做 Cursor、也不做多厂商聚合。
+          </div>
+        </div>
+        <pre class="panel" aria-label="启动命令"><code><span class="dim"># Windows 示例</span>
+copy .env.example .env
+.\codebuddy-proxy-windows-amd64.exe
+
+<span class="dim"># 或从源码</span>
+cd go-codebuddy &amp;&amp; cp .env.example .env
+go run ./cmd/codebuddy-proxy
+
+<span class="dim"># endpoints</span>
+API    <span class="hot">http://127.0.0.1:32126/v1</span>
+Admin  <span class="hot">http://127.0.0.1:32126/direct-admin/</span></code></pre>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="wrap">
+        <p class="kicker">Ship it</p>
+        <h2 class="title">把 CodeBuddy 接到你的工具链</h2>
+        <p class="desc">管理台完成 OAuth，客户端只认 Base URL 和 API Key。完整说明见仓库 README。</p>
+        <div class="cta-row">
+          <a class="btn btn-solid" href="https://github.com/wnddd839/proxy-codebuddy" target="_blank" rel="noopener">GitHub</a>
+          <a class="btn btn-line" href="https://github.com/wnddd839/proxy-codebuddy#readme" target="_blank" rel="noopener">README</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <p>CodeBuddy Proxy · Go · BSD-3-Clause · 仅限授权与合规使用</p>
+      <p>
+        <a href="https://github.com/wnddd839/proxy-codebuddy" target="_blank" rel="noopener">仓库</a>
+        ·
+        <a href="https://github.com/wnddd839/proxy-codebuddy#readme" target="_blank" rel="noopener">README</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
