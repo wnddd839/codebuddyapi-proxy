@@ -25,6 +25,13 @@ type Client struct {
 }
 
 func NewClient(cfg config.Config) *Client {
+	// IMPORTANT: do NOT set http.Client.Timeout for protocol_direct chat.
+	// CodeBuddy chat is always upstream-streamed; a total Timeout would kill
+	// long agent turns / slow models mid-SSE and make clients "reconnect".
+	headerTimeout := cfg.HTTPTimeout
+	if headerTimeout <= 0 {
+		headerTimeout = 60 * time.Second
+	}
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -36,11 +43,12 @@ func NewClient(cfg config.Config) *Client {
 		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
 		IdleConnTimeout:       cfg.IdleConnTimeout,
 		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: headerTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	return &Client{
 		HTTP: &http.Client{
-			Timeout:   cfg.HTTPTimeout,
+			Timeout:   0,
 			Transport: transport,
 		},
 		IDEVersion: strutil.First(cfg.IDEVersion, config.DefaultIDEVersion),
