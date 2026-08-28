@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +17,35 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+
+	// First-run / binary UX: if no gateway key is configured, create one and
+	// persist it to .env so clients don't break after restart.
+	if strings.TrimSpace(cfg.APIKey) == "" {
+		key, err := server.GenerateProxyAPIKey()
+		if err != nil {
+			logger.Error("failed to generate default api key", "error", err)
+			os.Exit(1)
+		}
+		envPath := config.ResolveEnvFilePath()
+		values := map[string]string{
+			"CODEBUDDY_PROXY_API_KEY":         key,
+			"CODEBUDDY_PROXY_REQUIRE_API_KEY": "true",
+		}
+		if strings.TrimSpace(cfg.AdminPassword) == "" {
+			values["CODEBUDDY_PROXY_ADMIN_PASSWORD"] = key
+			cfg.AdminPassword = key
+		}
+		if err := config.UpsertEnvFile(envPath, values); err != nil {
+			logger.Error("failed to persist default api key", "path", envPath, "error", err)
+			os.Exit(1)
+		}
+		cfg.APIKey = key
+		cfg.RequireAPIKey = true
+		_ = os.Setenv("CODEBUDDY_PROXY_API_KEY", key)
+		_ = os.Setenv("CODEBUDDY_PROXY_REQUIRE_API_KEY", "true")
+		logger.Info("generated and saved gateway api key", "path", envPath, "apiKey", key)
+	}
+
 	svc := gateway.New(cfg, logger)
 	srv := server.New(cfg, svc)
 
@@ -25,6 +55,7 @@ func main() {
 		"transport", cfg.Transport,
 		"accountsPath", cfg.AccountsPath,
 		"requireApiKey", cfg.RequireAPIKey,
+		"apiKeyPreview", maskKey(cfg.APIKey),
 	)
 
 	errCh := make(chan error, 1)
@@ -50,4 +81,15 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func maskKey(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return ""
+	}
+	if len(text) <= 12 {
+		return text[:min(4, len(text))] + "..."
+	}
+	return text[:6] + "..." + text[len(text)-4:]
 }

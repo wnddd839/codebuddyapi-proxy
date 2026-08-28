@@ -55,29 +55,35 @@
 
 ## 快速开始
 
-### 方式 A：直接下载（推荐）
+### 方式 A：直接下载（推荐，新手最省事）
 
-从 [产品页](https://wnddd839.github.io/proxy-codebuddy/) 或 [`go-codebuddy/releases/`](go-codebuddy/releases/) 下载对应平台二进制，同目录复制 `.env.example` 为 `.env` 并填写密码与 API Key，然后运行。
+1. 从 [产品页](https://wnddd839.github.io/proxy-codebuddy/) 或 [`go-codebuddy/releases/`](go-codebuddy/releases/) 下载对应平台二进制  
+2. **直接运行**（同目录会自动读写 `.env`）  
+3. 打开管理台登录 CodeBuddy，把页面上的 **Base URL + API Key** 填进 ZCode / NewAPI
 
 Windows 示例：
 
 ```powershell
-# 下载 codebuddy-proxy-windows-amd64.exe 与同目录 .env.example
-copy .env.example .env
-# 编辑 .env 后
 .\codebuddy-proxy-windows-amd64.exe
+# 首次若没有 Key，日志会打印并写入同目录 .env
+# 管理台：http://127.0.0.1:32126/direct-admin/
+# API：   http://127.0.0.1:32126/v1
 ```
+
+> **重要：** 管理台「生成 API Key」会**写入 `.env` 并立即生效**。旧 Key 会失效，客户端必须换成新 Key，否则会 401。
 
 ### 方式 B：从源码运行
 
 ```bash
 git clone https://github.com/wnddd839/proxy-codebuddy.git
 cd proxy-codebuddy/go-codebuddy
-cp .env.example .env
+# 可选：cp .env.example .env
 go run ./cmd/codebuddy-proxy
 ```
 
-编辑 `.env`，至少设置：
+程序会自动加载当前目录 / 可执行文件旁的 `.env`（不会覆盖已有系统环境变量）。
+
+可选手写配置：
 
 ```bash
 CODEBUDDY_PROXY_API_KEY=你的长随机密钥
@@ -93,7 +99,7 @@ CODEBUDDY_PROXY_REQUIRE_API_KEY=true
 | 管理台 | `http://127.0.0.1:32126/direct-admin/` |
 | Health | `http://127.0.0.1:32126/health` |
 
-打开管理台 → OAuth 登录 CodeBuddy → 刷新模型 → 开始调用。
+打开管理台 → OAuth 登录 CodeBuddy → 复制 API Key 到客户端 → 开始调用。
 
 ---
 
