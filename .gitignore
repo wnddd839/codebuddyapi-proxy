@@ -1,0 +1,9 @@
+bin/
+*.exe
+!releases/*.exe
+*.test
+*.out
+.env
+*.log
+.DS_Store
+.cache/

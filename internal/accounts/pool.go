@@ -1,0 +1,682 @@
+package accounts
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/wnddd839/codebuddy-proxy/internal/config"
+	"github.com/wnddd839/codebuddy-proxy/internal/strutil"
+)
+
+var (
+	ErrNoAccounts      = errors.New("no enabled CodeBuddy accounts with credentials available")
+	ErrAccountNotFound = errors.New("CodeBuddy account not found")
+	ErrAccountDisabled = errors.New("CodeBuddy account is disabled")
+	ErrNoCredentials   = errors.New("CodeBuddy account has no credentials")
+)
+
+func (a *Account) UnmarshalJSON(data []byte) error {
+	type alias Account
+	aux := &struct {
+		Enabled *bool `json:"enabled"`
+		*alias
+	}{alias: (*alias)(a)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Enabled == nil {
+		a.Enabled = true
+		a.enabledSet = false
+	} else {
+		a.Enabled = *aux.Enabled
+		a.enabledSet = true
+	}
+	return nil
+}
+
+type AuthStatus struct {
+	LoggedIn     *bool  `json:"loggedIn,omitempty"`
+	UserID       string `json:"userId,omitempty"`
+	UserName     string `json:"userName,omitempty"`
+	UserNickname string `json:"userNickname,omitempty"`
+	AuthMode     string `json:"authMode,omitempty"`
+}
+
+type Account struct {
+	ID                  string     `json:"id"`
+	Provider            string     `json:"provider"`
+	Label               string     `json:"label"`
+	Enabled             bool       `json:"enabled"`
+	enabledSet          bool       `json:"-"`
+	Source              string     `json:"source"`
+	Site                string     `json:"site"`
+	BaseURL             string     `json:"baseUrl"`
+	InternetEnvironment string     `json:"internetEnvironment"`
+	APIEndpoint         string     `json:"apiEndpoint,omitempty"`
+	ChatCompletionsPath string     `json:"chatCompletionsPath,omitempty"`
+	Domain              string     `json:"domain,omitempty"`
+	EnterpriseID        string     `json:"enterpriseId,omitempty"`
+	TenantID            string     `json:"tenantId,omitempty"`
+	DepartmentFullName  string     `json:"departmentFullName,omitempty"`
+	Transport           string     `json:"transport"`
+	AuthType            string     `json:"authType"`
+	APIKey              string     `json:"apiKey,omitempty"`
+	BearerToken         string     `json:"bearerToken,omitempty"`
+	RefreshToken        string     `json:"refreshToken,omitempty"`
+	TokenExpiresAt      int64      `json:"tokenExpiresAt,omitempty"`
+	CredentialHash      string     `json:"credentialHash,omitempty"`
+	AuthStatus          AuthStatus `json:"authStatus"`
+	CreatedAt           int64      `json:"createdAt"`
+	UpdatedAt           int64      `json:"updatedAt"`
+	LastUsedAt          int64      `json:"lastUsedAt,omitempty"`
+	LastSelectedAt      int64      `json:"lastSelectedAt,omitempty"`
+	SuccessRequests     int64      `json:"successRequests"`
+	FailedRequests      int64      `json:"failedRequests"`
+	LastError           string     `json:"lastError,omitempty"`
+}
+
+type Store struct {
+	Version   int       `json:"version"`
+	Provider  string    `json:"provider"`
+	NextIndex int       `json:"nextIndex"`
+	Accounts  []Account `json:"accounts"`
+}
+
+type Selection struct {
+	Source  string
+	Account Account
+	Index   int
+	Store   Store
+}
+
+type Pool struct {
+	path string
+	mu   sync.Mutex
+}
+
+func NewPool(path string) *Pool {
+	return &Pool{path: path}
+}
+
+func (p *Pool) Path() string { return p.path }
+
+func EmptyStore() Store {
+	return Store{Version: 1, Provider: "codebuddy", NextIndex: 0, Accounts: []Account{}}
+}
+
+func (p *Pool) Read() (Store, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.readUnlocked()
+}
+
+func (p *Pool) Write(store Store) (Store, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	normalized := NormalizeStore(store)
+	if err := p.writeUnlocked(normalized); err != nil {
+		return Store{}, err
+	}
+	return normalized, nil
+}
+
+func (p *Pool) readUnlocked() (Store, error) {
+	data, err := os.ReadFile(p.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return EmptyStore(), nil
+	}
+	if err != nil {
+		return Store{}, err
+	}
+	var raw Store
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return Store{}, err
+	}
+	return NormalizeStore(raw), nil
+}
+
+func (p *Pool) writeUnlocked(store Store) error {
+	if err := os.MkdirAll(filepath.Dir(p.path), 0o700); err != nil {
+		return err
+	}
+	payload, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	payload = append(payload, '\n')
+	tmp := p.path + ".tmp"
+	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p.path)
+}
+
+func NormalizeStore(store Store) Store {
+	out := EmptyStore()
+	if store.Version > 0 {
+		out.Version = store.Version
+	}
+	for _, raw := range store.Accounts {
+		account := NormalizeAccount(raw, time.Now().UnixMilli())
+		if !HasCredentials(account) {
+			continue
+		}
+		out.Accounts = append(out.Accounts, account)
+	}
+	if len(out.Accounts) == 0 {
+		out.NextIndex = 0
+		return out
+	}
+	next := store.NextIndex % len(out.Accounts)
+	if next < 0 {
+		next += len(out.Accounts)
+	}
+	out.NextIndex = next
+	return out
+}
+
+func NormalizeAccount(raw Account, now int64) Account {
+	if now <= 0 {
+		now = time.Now().UnixMilli()
+	}
+	site := config.NormalizeSite(raw.Site)
+	if site == "" {
+		site = inferSite(raw)
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(raw.BaseURL), "/")
+	if baseURL == "" {
+		if site == "domestic" {
+			baseURL = "https://www.codebuddy.cn"
+		} else {
+			baseURL = "https://www.codebuddy.ai"
+		}
+	}
+	internet := strings.TrimSpace(raw.InternetEnvironment)
+	if internet == "" {
+		if site == "domestic" {
+			internet = "domestic"
+		} else {
+			internet = "public"
+		}
+	}
+	auth := AuthStatus{
+		LoggedIn:     raw.AuthStatus.LoggedIn,
+		UserID:       compact(raw.AuthStatus.UserID),
+		UserName:     compact(raw.AuthStatus.UserName),
+		UserNickname: compact(raw.AuthStatus.UserNickname),
+		AuthMode:     compact(raw.AuthStatus.AuthMode),
+	}
+	bearer := compact(raw.BearerToken)
+	apiKey := compact(raw.APIKey)
+	authType := ""
+	switch {
+	case bearer != "":
+		authType = "bearer"
+	case apiKey != "":
+		authType = "api_key"
+	}
+	credHash := compact(raw.CredentialHash)
+	if credHash == "" {
+		credHash = hashSecret(bearer + apiKey)
+	}
+	identity := strutil.First(auth.UserID, auth.UserName, raw.Label)
+	id := compact(raw.ID)
+	if id == "" {
+		id = hashSecret(fmt.Sprintf("%s|%s|%s|%s", identity, credHash, baseURL, site))
+	}
+	created := raw.CreatedAt
+	if created == 0 {
+		created = now
+	}
+	updated := raw.UpdatedAt
+	if updated == 0 {
+		updated = now
+	}
+	label := compact(raw.Label)
+	if label == "" {
+		label = strutil.First(auth.UserName, auth.UserID, "CodeBuddy "+id[:min(6, len(id))])
+	}
+	enabled := raw.Enabled
+	if !raw.enabledSet && raw.ID == "" && raw.CreatedAt == 0 {
+		enabled = true
+	}
+	transport := compact(raw.Transport)
+	if transport == "" {
+		transport = config.DefaultTransport
+	}
+	if transport != "protocol_direct" {
+		transport = config.DefaultTransport
+	}
+
+	expiresAt := raw.TokenExpiresAt
+	account := Account{
+		ID:                  id,
+		Provider:            "codebuddy",
+		Label:               label,
+		Enabled:             enabled,
+		Source:              strutil.First(raw.Source, "pool"),
+		Site:                site,
+		BaseURL:             baseURL,
+		InternetEnvironment: internet,
+		APIEndpoint:         strings.TrimRight(compact(raw.APIEndpoint), "/"),
+		ChatCompletionsPath: compact(raw.ChatCompletionsPath),
+		Domain:              compact(raw.Domain),
+		EnterpriseID:        compact(raw.EnterpriseID),
+		TenantID:            strutil.First(compact(raw.TenantID), compact(raw.EnterpriseID)),
+		DepartmentFullName:  compact(raw.DepartmentFullName),
+		Transport:           transport,
+		AuthType:            authType,
+		APIKey:              apiKey,
+		BearerToken:         bearer,
+		RefreshToken:        compact(raw.RefreshToken),
+		TokenExpiresAt:      expiresAt,
+		CredentialHash:      credHash,
+		AuthStatus:          auth,
+		CreatedAt:           created,
+		UpdatedAt:           updated,
+		LastUsedAt:          raw.LastUsedAt,
+		LastSelectedAt:      raw.LastSelectedAt,
+		SuccessRequests:     raw.SuccessRequests,
+		FailedRequests:      raw.FailedRequests,
+		LastError:           compact(raw.LastError),
+	}
+	return account
+}
+
+// CreateAccount builds a normalized account with Enabled defaulting to true.
+func CreateAccount(raw Account) Account {
+	now := time.Now().UnixMilli()
+	if !raw.enabledSet {
+		raw.Enabled = true
+		raw.enabledSet = true
+	}
+	if raw.CreatedAt == 0 {
+		raw.CreatedAt = now
+	}
+	raw.UpdatedAt = now
+	if raw.Transport == "" {
+		raw.Transport = config.DefaultTransport
+	}
+	return NormalizeAccount(raw, now)
+}
+
+func HasCredentials(account Account) bool {
+	return compact(account.BearerToken) != "" || compact(account.APIKey) != ""
+}
+
+func (p *Pool) Select(opts SelectOptions) (Selection, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	store, err := p.readUnlocked()
+	if err != nil {
+		return Selection{}, err
+	}
+	now := time.Now().UnixMilli()
+	if opts.AccountID != "" {
+		for i, account := range store.Accounts {
+			if account.ID != opts.AccountID {
+				continue
+			}
+			if !account.Enabled {
+				return Selection{}, fmt.Errorf("%w: %s", ErrAccountDisabled, opts.AccountID)
+			}
+			if !HasCredentials(account) {
+				return Selection{}, fmt.Errorf("%w: %s", ErrNoCredentials, opts.AccountID)
+			}
+			if opts.Site != "" && config.NormalizeSite(account.Site) != config.NormalizeSite(opts.Site) {
+				return Selection{}, fmt.Errorf("CodeBuddy account site mismatch: account=%s, configured=%s", account.Site, config.NormalizeSite(opts.Site))
+			}
+			store.Accounts[i].LastSelectedAt = now
+			if err := p.writeUnlocked(store); err != nil {
+				return Selection{}, err
+			}
+			return Selection{Source: "pool", Account: store.Accounts[i], Index: i, Store: store}, nil
+		}
+		return Selection{}, fmt.Errorf("%w: %s", ErrAccountNotFound, opts.AccountID)
+	}
+
+	if len(store.Accounts) == 0 {
+		return Selection{}, ErrNoAccounts
+	}
+	exclude := map[string]struct{}{}
+	for _, id := range opts.ExcludeIDs {
+		exclude[id] = struct{}{}
+	}
+	for offset := 0; offset < len(store.Accounts); offset++ {
+		idx := (store.NextIndex + offset) % len(store.Accounts)
+		account := store.Accounts[idx]
+		if !account.Enabled || !HasCredentials(account) {
+			continue
+		}
+		if opts.Site != "" && config.NormalizeSite(account.Site) != config.NormalizeSite(opts.Site) {
+			continue
+		}
+		if _, skip := exclude[account.ID]; skip {
+			continue
+		}
+		store.Accounts[idx].LastSelectedAt = now
+		store.NextIndex = (idx + 1) % len(store.Accounts)
+		if err := p.writeUnlocked(store); err != nil {
+			return Selection{}, err
+		}
+		return Selection{Source: "pool", Account: store.Accounts[idx], Index: idx, Store: store}, nil
+	}
+	if opts.Site != "" {
+		return Selection{}, fmt.Errorf("%w for site=%s", ErrNoAccounts, config.NormalizeSite(opts.Site))
+	}
+	return Selection{}, ErrNoAccounts
+}
+
+type SelectOptions struct {
+	AccountID  string
+	Site       string
+	ExcludeIDs []string
+}
+
+func (p *Pool) MarkResult(selection Selection, ok bool, errMsg string) error {
+	if selection.Source != "pool" || selection.Account.ID == "" {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	store, err := p.readUnlocked()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UnixMilli()
+	for i := range store.Accounts {
+		if store.Accounts[i].ID != selection.Account.ID {
+			continue
+		}
+		store.Accounts[i].LastUsedAt = now
+		if ok {
+			store.Accounts[i].SuccessRequests++
+			store.Accounts[i].LastError = ""
+		} else {
+			store.Accounts[i].FailedRequests++
+			store.Accounts[i].LastError = truncate(errMsg, 600)
+		}
+		break
+	}
+	return p.writeUnlocked(store)
+}
+
+func (p *Pool) Upsert(account Account) (Account, Store, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	store, err := p.readUnlocked()
+	if err != nil {
+		return Account{}, Store{}, err
+	}
+	normalized := CreateAccount(account)
+	replaced := false
+	for i, existing := range store.Accounts {
+		if existing.ID == normalized.ID ||
+			(normalized.CredentialHash != "" && existing.CredentialHash == normalized.CredentialHash) ||
+			(normalized.AuthStatus.UserID != "" && existing.AuthStatus.UserID == normalized.AuthStatus.UserID) {
+			normalized.ID = existing.ID
+			normalized.CreatedAt = existing.CreatedAt
+			normalized.SuccessRequests = existing.SuccessRequests
+			normalized.FailedRequests = existing.FailedRequests
+			normalized.LastUsedAt = existing.LastUsedAt
+			normalized.LastSelectedAt = existing.LastSelectedAt
+			store.Accounts[i] = normalized
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		store.Accounts = append(store.Accounts, normalized)
+	}
+	store = NormalizeStore(store)
+	if err := p.writeUnlocked(store); err != nil {
+		return Account{}, Store{}, err
+	}
+	for _, item := range store.Accounts {
+		if item.ID == normalized.ID {
+			return item, store, nil
+		}
+	}
+	return normalized, store, nil
+}
+
+func (p *Pool) Delete(id string) (Store, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	store, err := p.readUnlocked()
+	if err != nil {
+		return Store{}, err
+	}
+	next := store.Accounts[:0]
+	found := false
+	for _, account := range store.Accounts {
+		if account.ID == id {
+			found = true
+			continue
+		}
+		next = append(next, account)
+	}
+	if !found {
+		return store, fmt.Errorf("%w: %s", ErrAccountNotFound, id)
+	}
+	store.Accounts = next
+	store = NormalizeStore(store)
+	if err := p.writeUnlocked(store); err != nil {
+		return Store{}, err
+	}
+	return store, nil
+}
+
+func (p *Pool) SetEnabled(id string, enabled bool) (Account, Store, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	store, err := p.readUnlocked()
+	if err != nil {
+		return Account{}, Store{}, err
+	}
+	for i := range store.Accounts {
+		if store.Accounts[i].ID != id {
+			continue
+		}
+		store.Accounts[i].Enabled = enabled
+		store.Accounts[i].UpdatedAt = time.Now().UnixMilli()
+		if err := p.writeUnlocked(store); err != nil {
+			return Account{}, Store{}, err
+		}
+		return store.Accounts[i], store, nil
+	}
+	return Account{}, store, fmt.Errorf("%w: %s", ErrAccountNotFound, id)
+}
+
+func (p *Pool) ReplaceAccount(account Account) (Account, Store, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	store, err := p.readUnlocked()
+	if err != nil {
+		return Account{}, Store{}, err
+	}
+	for i := range store.Accounts {
+		if store.Accounts[i].ID != account.ID {
+			continue
+		}
+		account.UpdatedAt = time.Now().UnixMilli()
+		store.Accounts[i] = account
+		if err := p.writeUnlocked(NormalizeStore(store)); err != nil {
+			return Account{}, Store{}, err
+		}
+		return account, store, nil
+	}
+	return Account{}, store, fmt.Errorf("%w: %s", ErrAccountNotFound, account.ID)
+}
+
+type Summary struct {
+	ID                  string `json:"id"`
+	Provider            string `json:"provider"`
+	Label               string `json:"label"`
+	Enabled             bool   `json:"enabled"`
+	Source              string `json:"source"`
+	Site                string `json:"site"`
+	BaseURL             string `json:"baseUrl"`
+	InternetEnvironment string `json:"internetEnvironment"`
+	APIEndpoint         string `json:"apiEndpoint,omitempty"`
+	ChatCompletionsPath string `json:"chatCompletionsPath,omitempty"`
+	Transport           string `json:"transport"`
+	AuthType            string `json:"authType"`
+	HasCredentials      bool   `json:"hasCredentials"`
+	LoggedIn            bool   `json:"loggedIn"`
+	UserID              string `json:"userId,omitempty"`
+	UserName            string `json:"userName,omitempty"`
+	UserNickname        string `json:"userNickname,omitempty"`
+	AuthMode            string `json:"authMode,omitempty"`
+	BearerTokenPreview  string `json:"bearerTokenPreview,omitempty"`
+	RefreshTokenPreview string `json:"refreshTokenPreview,omitempty"`
+	APIKeyPreview       string `json:"apiKeyPreview,omitempty"`
+	CreatedAt           int64  `json:"createdAt"`
+	UpdatedAt           int64  `json:"updatedAt"`
+	LastUsedAt          int64  `json:"lastUsedAt,omitempty"`
+	LastSelectedAt      int64  `json:"lastSelectedAt,omitempty"`
+	SuccessRequests     int64  `json:"successRequests"`
+	FailedRequests      int64  `json:"failedRequests"`
+	LastError           string `json:"lastError,omitempty"`
+	TokenExpiresAt      int64  `json:"tokenExpiresAt,omitempty"`
+	TokenExpired        bool   `json:"tokenExpired"`
+}
+
+func SummarizeAccount(account Account) Summary {
+	loggedIn := HasCredentials(account)
+	if account.AuthStatus.LoggedIn != nil {
+		loggedIn = *account.AuthStatus.LoggedIn && HasCredentials(account)
+	}
+	return Summary{
+		ID:                  account.ID,
+		Provider:            "codebuddy",
+		Label:               account.Label,
+		Enabled:             account.Enabled,
+		Source:              account.Source,
+		Site:                account.Site,
+		BaseURL:             account.BaseURL,
+		InternetEnvironment: account.InternetEnvironment,
+		APIEndpoint:         account.APIEndpoint,
+		ChatCompletionsPath: account.ChatCompletionsPath,
+		Transport:           account.Transport,
+		AuthType:            account.AuthType,
+		HasCredentials:      HasCredentials(account),
+		LoggedIn:            loggedIn,
+		UserID:              account.AuthStatus.UserID,
+		UserName:            account.AuthStatus.UserName,
+		UserNickname:        account.AuthStatus.UserNickname,
+		AuthMode:            account.AuthStatus.AuthMode,
+		BearerTokenPreview:  maskSecret(account.BearerToken, 6),
+		RefreshTokenPreview: maskSecret(account.RefreshToken, 4),
+		APIKeyPreview:       maskSecret(account.APIKey, 6),
+		CreatedAt:           account.CreatedAt,
+		UpdatedAt:           account.UpdatedAt,
+		LastUsedAt:          account.LastUsedAt,
+		LastSelectedAt:      account.LastSelectedAt,
+		SuccessRequests:     account.SuccessRequests,
+		FailedRequests:      account.FailedRequests,
+		LastError:           account.LastError,
+		TokenExpiresAt:      account.TokenExpiresAt,
+		TokenExpired:        account.TokenExpiresAt > 0 && account.TokenExpiresAt <= time.Now().UnixMilli(),
+	}
+}
+
+type StoreSummary struct {
+	OK            bool      `json:"ok"`
+	Provider      string    `json:"provider"`
+	Version       int       `json:"version"`
+	NextIndex     int       `json:"nextIndex"`
+	AccountsPath  string    `json:"accountsPath"`
+	Count         int       `json:"count"`
+	EnabledCount  int       `json:"enabledCount"`
+	DisabledCount int       `json:"disabledCount"`
+	LoggedIn      bool      `json:"loggedIn"`
+	Primary       *Summary  `json:"primary"`
+	Accounts      []Summary `json:"accounts"`
+}
+
+func SummarizeStore(store Store, path string) StoreSummary {
+	accounts := make([]Summary, 0, len(store.Accounts))
+	enabled := 0
+	loggedIn := false
+	var primary *Summary
+	for _, account := range store.Accounts {
+		summary := SummarizeAccount(account)
+		accounts = append(accounts, summary)
+		if summary.Enabled {
+			enabled++
+			if summary.HasCredentials && summary.LoggedIn {
+				loggedIn = true
+			}
+			if primary == nil && summary.HasCredentials {
+				copy := summary
+				primary = &copy
+			}
+		}
+	}
+	if primary == nil && len(accounts) > 0 {
+		copy := accounts[0]
+		primary = &copy
+	}
+	return StoreSummary{
+		OK:            true,
+		Provider:      "codebuddy",
+		Version:       store.Version,
+		NextIndex:     store.NextIndex,
+		AccountsPath:  path,
+		Count:         len(accounts),
+		EnabledCount:  enabled,
+		DisabledCount: len(accounts) - enabled,
+		LoggedIn:      loggedIn,
+		Primary:       primary,
+		Accounts:      accounts,
+	}
+}
+
+func inferSite(raw Account) string {
+	env := strings.ToLower(compact(raw.InternetEnvironment))
+	if env == "internal" {
+		return "domestic"
+	}
+	url := strings.ToLower(compact(raw.BaseURL))
+	if strings.Contains(url, "codebuddy.cn") || strings.Contains(url, "copilot.tencent.com") {
+		return "domestic"
+	}
+	return config.NormalizeSite(raw.Site)
+}
+
+func compact(value string) string { return strings.TrimSpace(value) }
+
+func hashSecret(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+func maskSecret(value string, visible int) string {
+	text := compact(value)
+	if text == "" {
+		return ""
+	}
+	if len(text) <= visible*2 {
+		if visible > len(text) {
+			visible = max(1, len(text))
+		}
+		return text[:visible] + "..."
+	}
+	return text[:visible] + "..." + text[len(text)-visible:]
+}
+
+func truncate(value string, n int) string {
+	if len(value) <= n {
+		return value
+	}
+	return value[:n]
+}
