@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wnddd839/codebuddy-proxy/internal/accounts"
@@ -226,53 +227,67 @@ func (s *Server) streamChat(
 		return
 	}
 	id := fmt.Sprintf("chatcmpl_codebuddy_%d", time.Now().UnixMilli())
-	started := false
-	done := false
-	streamedToolCalls := 0
+	var (
+		mu                sync.Mutex
+		started           bool
+		done              bool
+		streamedToolCalls int
+		streamedChars     int
+	)
+	writeLocked := func(fn func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		if done {
+			return
+		}
+		fn()
+	}
 	startStream := func() {
 		if started {
 			return
 		}
 		started = true
 		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
 		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
 		_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Role: "assistant"}, nil))
 		flusher.Flush()
 	}
 
+	// Open SSE immediately so clients don't treat upstream connect latency as a hang,
+	// and so keep-alive comments have a live response to write into.
+	writeLocked(startStream)
+
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	go func() {
-		<-r.Context().Done()
-		cancel()
-	}()
 
 	keepAlive := s.Cfg.StreamKeepAlive
-	var keepAliveStop chan struct{}
-	if keepAlive > 0 {
-		keepAliveStop = make(chan struct{})
-		go func() {
-			ticker := time.NewTicker(keepAlive)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-keepAliveStop:
-					return
-				case <-ticker.C:
-					if done {
-						return
-					}
+	if keepAlive <= 0 {
+		keepAlive = 15 * time.Second
+	}
+	keepAliveStop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(keepAlive)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-keepAliveStop:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				writeLocked(func() {
 					startStream()
 					httputil.WriteSSEComment(w, "keep-alive")
-				}
+				})
 			}
-		}()
-	}
+		}
+	}()
+	defer close(keepAliveStop)
 
-	streamedChars := 0
 	result, err := s.Svc.CompleteFromPool(ctx, gateway.CompleteOptions{
 		Model:      providerModel.Model,
 		Messages:   messages,
@@ -283,70 +298,76 @@ func (s *Server) streamChat(
 			if event.Type != "tool_use" {
 				return
 			}
-			startStream()
-			streamedToolCalls++
-			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
-				ToolCalls: []openai.ToolCall{{
-					Index: streamedToolCalls - 1,
-					ID:    strutil.First(event.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
-					Type:  "function",
-					Function: openai.ToolFunction{
-						Name:      strutil.First(event.Name, "tool"),
-						Arguments: mustJSON(event.Input),
-					},
-				}},
-			}, nil))
+			writeLocked(func() {
+				startStream()
+				streamedToolCalls++
+				_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
+					ToolCalls: []openai.ToolCall{{
+						Index: streamedToolCalls - 1,
+						ID:    strutil.First(event.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
+						Type:  "function",
+						Function: openai.ToolFunction{
+							Name:      strutil.First(event.Name, "tool"),
+							Arguments: mustJSON(event.Input),
+						},
+					}},
+				}, nil))
+			})
 		},
 		OnDelta: func(delta string) {
 			if delta == "" {
 				return
 			}
-			startStream()
-			streamedChars += len(delta)
-			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: delta}, nil))
+			writeLocked(func() {
+				startStream()
+				streamedChars += len(delta)
+				_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: delta}, nil))
+			})
 		},
 	})
-	if keepAliveStop != nil {
-		close(keepAliveStop)
-	}
 	if err != nil {
 		finish(false, streamedChars, 0, 0, 0, err.Error())
-		if started {
+		writeLocked(func() {
+			if !started {
+				httputil.WriteJSON(w, http.StatusBadGateway, openai.NewError(err.Error(), "upstream_error"))
+				done = true
+				return
+			}
 			_ = httputil.WriteSSE(w, map[string]any{"error": map[string]any{"message": err.Error(), "type": "upstream_error"}})
 			httputil.WriteSSEDone(w)
 			done = true
-			return
-		}
-		httputil.WriteJSON(w, http.StatusBadGateway, openai.NewError(err.Error(), "upstream_error"))
+		})
 		return
 	}
 	finish(true, len(result.Turn.Text), result.Bytes, int64(result.EventCount), int64(result.DeltaCount), "")
-	startStream()
-	if streamedChars == 0 && result.Turn.Text != "" {
-		_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: result.Turn.Text}, nil))
-	}
-	if len(result.Turn.ToolUses) > 0 && streamedToolCalls == 0 {
-		for i, tool := range result.Turn.ToolUses {
-			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
-				ToolCalls: []openai.ToolCall{{
-					Index: i,
-					ID:    strutil.First(tool.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
-					Type:  "function",
-					Function: openai.ToolFunction{
-						Name:      strutil.First(tool.Name, "tool"),
-						Arguments: mustJSON(tool.Input),
-					},
-				}},
-			}, nil))
+	writeLocked(func() {
+		startStream()
+		if streamedChars == 0 && result.Turn.Text != "" {
+			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: result.Turn.Text}, nil))
 		}
-	}
-	finishReason := "stop"
-	if len(result.Turn.ToolUses) > 0 {
-		finishReason = "tool_calls"
-	}
-	_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{}, &finishReason))
-	httputil.WriteSSEDone(w)
-	done = true
+		if len(result.Turn.ToolUses) > 0 && streamedToolCalls == 0 {
+			for i, tool := range result.Turn.ToolUses {
+				_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
+					ToolCalls: []openai.ToolCall{{
+						Index: i,
+						ID:    strutil.First(tool.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
+						Type:  "function",
+						Function: openai.ToolFunction{
+							Name:      strutil.First(tool.Name, "tool"),
+							Arguments: mustJSON(tool.Input),
+						},
+					}},
+				}, nil))
+			}
+		}
+		finishReason := "stop"
+		if len(result.Turn.ToolUses) > 0 {
+			finishReason = "tool_calls"
+		}
+		_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{}, &finishReason))
+		httputil.WriteSSEDone(w)
+		done = true
+	})
 }
 
 func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path string) {
