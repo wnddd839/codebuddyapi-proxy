@@ -2,6 +2,11 @@
 
 ## 2026-08-29
 
+### 运行时配置并发安全
+- `gateway.Service` 用 `atomic.Pointer[config.Config]` 保存运行时配置（go-modern `atomic_types`）。
+- 管理台改 API Key / 号池站点只更新这一份快照；`Server` 不再持有可写 `Cfg` 副本。
+- `authorizeAPI` / `client-config` 一律读 `Svc.Config()`；补 `-race` 测试。
+
 ### OAuth session 并发安全
 - `LiveOAuthSession()` 改为返回值快照（不再外泄可变指针）。
 - launch/callback 统一走锁内 `OAuthLaunchAuthorized(id, token)`。
