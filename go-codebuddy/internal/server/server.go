@@ -670,11 +670,9 @@ func (s *Server) handleAccountAction(w http.ResponseWriter, r *http.Request, pat
 func (s *Server) handleOAuthLaunch(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	publicOrigin := httputil.PublicOrigin(r, s.Cfg.PublicBaseURL)
 	setCookie := fmt.Sprintf("cursor_codebuddy_oauth=%s; Path=/; Max-Age=900; HttpOnly; SameSite=Lax", token)
-	// Always read the live session object; never cache a start-time snapshot.
-	live := s.Svc.LiveOAuthSession()
-	if id == "" || token == "" || id != live.ID || token != live.Token {
+	// Authorize under the service lock; never race on a shared *OAuthSession.
+	if !s.Svc.OAuthLaunchAuthorized(id, token) {
 		w.Header().Set("Set-Cookie", setCookie)
 		httputil.WriteHTML(w, http.StatusForbidden, admin.LaunchPage("登录入口已失效或参数不正确，请回到管理台重新生成 CodeBuddy 登录入口。", false))
 		return
@@ -688,7 +686,6 @@ func (s *Server) handleOAuthLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Set-Cookie", setCookie)
 	httputil.WriteHTML(w, http.StatusConflict, admin.LaunchPage(strutil.First(session.Error, "请回到管理台重新发起 CodeBuddy OAuth 登录。"), false))
-	_ = publicOrigin
 }
 
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
@@ -697,8 +694,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	publicOrigin := httputil.PublicOrigin(r, s.Cfg.PublicBaseURL)
 	setCookie := fmt.Sprintf("cursor_codebuddy_oauth=%s; Path=/; Max-Age=900; HttpOnly; SameSite=Lax", token)
 	w.Header().Set("Set-Cookie", setCookie)
-	live := s.Svc.LiveOAuthSession()
-	if id == "" || token == "" || id != live.ID || token != live.Token {
+	if !s.Svc.OAuthLaunchAuthorized(id, token) {
 		httputil.WriteHTML(w, http.StatusForbidden, admin.LaunchPage("登录回调无效，请回到管理台重试。", false))
 		return
 	}
@@ -708,7 +704,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok, _ := payload["ok"].(bool)
-	// Re-read live session after poll; do not trust a stale snapshot.
+	// Re-read a value snapshot after poll.
 	liveAfter := s.Svc.CurrentOAuth()
 	msg := "CodeBuddy 登录已确认，账号已导入账号池。"
 	if !ok {

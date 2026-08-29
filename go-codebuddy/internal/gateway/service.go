@@ -476,16 +476,11 @@ func emptyOAuthSession() OAuthSession {
 	return OAuthSession{Status: "idle"}
 }
 
-// LiveOAuthSession returns the live session object (same pointer identity).
-// Callers must treat it as read-mostly and always re-read via this method
-// after StartOAuth / PollOAuth instead of caching a copy across requests.
-func (s *Service) LiveOAuthSession() *OAuthSession {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.oauth == nil {
-		s.oauth = &OAuthSession{Status: "idle"}
-	}
-	return s.oauth
+// LiveOAuthSession returns a value snapshot of the current OAuth session.
+// Prefer OAuthLaunchAuthorized for credential checks so callers never race
+// on a shared mutable pointer.
+func (s *Service) LiveOAuthSession() OAuthSession {
+	return s.CurrentOAuth()
 }
 
 func (s *Service) resetOAuthSessionLocked(site, label, publicOrigin string) {
@@ -515,7 +510,7 @@ func (s *Service) StartOAuth(ctx context.Context, site, label, publicOrigin stri
 		s.mu.Unlock()
 		return payload, nil
 	}
-	// In-place reset keeps the same pointer identity for live session readers.
+	// Reset under lock; launch/callback authorize via id+token snapshot checks.
 	s.resetOAuthSessionLocked(site, label, publicOrigin)
 	sessionID := s.oauth.ID
 	sessionSite := s.oauth.Site
