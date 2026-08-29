@@ -108,10 +108,48 @@ type ToolFunction struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens,omitempty"`
+}
+
+type CompletionTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens,omitempty"`
+}
+
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens             int                      `json:"prompt_tokens"`
+	CompletionTokens         int                      `json:"completion_tokens"`
+	TotalTokens              int                      `json:"total_tokens"`
+	PromptTokensDetails      *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails  *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+	CacheReadInputTokens     int                      `json:"cache_read_input_tokens,omitempty"`
+	CacheCreationInputTokens int                      `json:"cache_creation_input_tokens,omitempty"`
+	PromptCacheHitTokens     int                      `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens    int                      `json:"prompt_cache_miss_tokens,omitempty"`
+}
+
+func UsageFromProvider(u provider.Usage) Usage {
+	out := Usage{
+		PromptTokens:             u.PromptTokens,
+		CompletionTokens:         u.CompletionTokens,
+		TotalTokens:              u.TotalTokens,
+		CacheReadInputTokens:     u.CacheReadInputTokens,
+		CacheCreationInputTokens: u.CacheCreationInputTokens,
+		PromptCacheHitTokens:     u.PromptCacheHitTokens,
+		PromptCacheMissTokens:    u.PromptCacheMissTokens,
+	}
+	if u.PromptTokensDetails != nil && u.PromptTokensDetails.CachedTokens > 0 {
+		out.PromptTokensDetails = &PromptTokensDetails{CachedTokens: u.PromptTokensDetails.CachedTokens}
+	} else if cached := u.CachedTokens(); cached > 0 {
+		out.PromptTokensDetails = &PromptTokensDetails{CachedTokens: cached}
+	}
+	if u.CompletionTokensDetails != nil && u.CompletionTokensDetails.ReasoningTokens > 0 {
+		out.CompletionTokensDetails = &CompletionTokensDetails{ReasoningTokens: u.CompletionTokensDetails.ReasoningTokens}
+	}
+	if out.TotalTokens == 0 {
+		out.TotalTokens = out.PromptTokens + out.CompletionTokens
+	}
+	return out
 }
 
 type StreamChunk struct {
@@ -120,6 +158,7 @@ type StreamChunk struct {
 	Created int64    `json:"created"`
 	Model   string   `json:"model"`
 	Choices []Choice `json:"choices"`
+	Usage   *Usage   `json:"usage,omitempty"`
 }
 
 func FromTurn(turn provider.Turn, id, model string) ChatCompletion {
@@ -159,11 +198,7 @@ func FromTurn(turn provider.Turn, id, model string) ChatCompletion {
 			Message:      msg,
 			FinishReason: &finish,
 		}},
-		Usage: Usage{
-			PromptTokens:     turn.Usage.PromptTokens,
-			CompletionTokens: turn.Usage.CompletionTokens,
-			TotalTokens:      turn.Usage.TotalTokens,
-		},
+		Usage: UsageFromProvider(turn.Usage),
 	}
 }
 
@@ -178,6 +213,19 @@ func StreamChunkOf(id, model string, delta Delta, finishReason *string) StreamCh
 			Delta:        &delta,
 			FinishReason: finishReason,
 		}},
+	}
+}
+
+// StreamUsageChunk emits the OpenAI include_usage final chunk (empty choices + usage).
+func StreamUsageChunk(id, model string, usage Usage) StreamChunk {
+	u := usage
+	return StreamChunk{
+		ID:      id,
+		Object:  "chat.completion.chunk",
+		Created: time.Now().Unix(),
+		Model:   model,
+		Choices: []Choice{},
+		Usage:   &u,
 	}
 }
 

@@ -97,8 +97,9 @@ h1{
 }
 .lede{margin:0;color:var(--ink-dim);font-size:13px;line-height:1.55;max-width:48ch}
 .metrics{
-  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px;
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:16px;
 }
+@media (max-width:980px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:720px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .metric{
   padding:12px;border-radius:var(--r-card);
@@ -256,6 +257,7 @@ pre{
           <div class="metric"><div class="k">Credits 余额</div><div class="v sm" id="mCredits">—</div></div>
           <div class="metric"><div class="k">启用账号</div><div class="v" id="mEnabled">0</div></div>
           <div class="metric"><div class="k">成功 / 失败</div><div class="v sm" id="mSF">0 / 0</div></div>
+          <div class="metric"><div class="k">总 Tokens</div><div class="v sm" id="mTokens">0</div></div>
         </div>
         <div class="actions" style="margin-top:16px">
           <button class="ghost" id="btnRefresh" type="button">刷新状态</button>
@@ -580,6 +582,11 @@ function paintStatus(data){
   const enabledCount = accounts.enabledCount != null ? accounts.enabledCount : ((accounts.accounts||[]).filter(function(a){return a.enabled;}).length);
   $('mEnabled').textContent = String(enabledCount);
   $('mSF').textContent = (stats.successRequests||0) + ' / ' + (stats.failedRequests||0);
+  const totalTokens = stats.totalTokens || 0;
+  const cachedTokens = stats.totalCachedTokens || 0;
+  $('mTokens').textContent = cachedTokens > 0
+    ? (totalTokens + ' · cache ' + cachedTokens)
+    : String(totalTokens);
   const loggedIn = !!accounts.loggedIn;
   const primary = accounts.primary || ((accounts.accounts||[])[0] || null);
   $('mLogin').textContent = loggedIn
