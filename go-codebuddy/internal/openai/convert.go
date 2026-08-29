@@ -126,6 +126,7 @@ type Usage struct {
 	CacheCreationInputTokens int                      `json:"cache_creation_input_tokens,omitempty"`
 	PromptCacheHitTokens     int                      `json:"prompt_cache_hit_tokens,omitempty"`
 	PromptCacheMissTokens    int                      `json:"prompt_cache_miss_tokens,omitempty"`
+	Source                   string                   `json:"usage_source,omitempty"`
 }
 
 func UsageFromProvider(u provider.Usage) Usage {
@@ -137,6 +138,7 @@ func UsageFromProvider(u provider.Usage) Usage {
 		CacheCreationInputTokens: u.CacheCreationInputTokens,
 		PromptCacheHitTokens:     u.PromptCacheHitTokens,
 		PromptCacheMissTokens:    u.PromptCacheMissTokens,
+		Source:                   u.Source,
 	}
 	if u.PromptTokensDetails != nil && u.PromptTokensDetails.CachedTokens > 0 {
 		out.PromptTokensDetails = &PromptTokensDetails{CachedTokens: u.PromptTokensDetails.CachedTokens}

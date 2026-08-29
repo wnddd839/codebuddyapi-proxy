@@ -260,7 +260,7 @@ func (s *Server) streamChat(
 	opts gateway.CompleteOptions,
 	finish func(bool, int, int64, int64, int64, string, provider.Usage),
 ) {
-	flusher, ok := w.(http.Flusher)
+	sse, ok := httputil.NewSSEStream(w, 16<<10)
 	if !ok {
 		httputil.WriteJSON(w, http.StatusInternalServerError, openai.NewError("streaming unsupported", "internal_error"))
 		return
@@ -292,8 +292,7 @@ func (s *Server) streamChat(
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
-		_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Role: "assistant"}, nil))
-		flusher.Flush()
+		_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Role: "assistant"}, nil))
 	}
 
 	// 立即打开 SSE，避免客户端把上游建连延迟误判为挂起；
@@ -322,7 +321,7 @@ func (s *Server) streamChat(
 				case <-ticker.C:
 					writeLocked(func() {
 						startStream()
-						httputil.WriteSSEComment(w, "keep-alive")
+						_ = sse.WriteComment("keep-alive")
 					})
 				}
 			}
@@ -338,7 +337,7 @@ func (s *Server) streamChat(
 		writeLocked(func() {
 			startStream()
 			streamedToolCalls++
-			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
+			_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
 				ToolCalls: []openai.ToolCall{{
 					Index: streamedToolCalls - 1,
 					ID:    strutil.First(event.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
@@ -358,7 +357,7 @@ func (s *Server) streamChat(
 		writeLocked(func() {
 			startStream()
 			streamedChars += len(delta)
-			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: delta}, nil))
+			_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: delta}, nil))
 		})
 	}
 	result, err := s.Svc.CompleteFromPool(ctx, opts)
@@ -382,8 +381,8 @@ func (s *Server) streamChat(
 			if code != nil {
 				errObj["code"] = code
 			}
-			_ = httputil.WriteSSE(w, map[string]any{"error": errObj})
-			httputil.WriteSSEDone(w)
+			_ = sse.WriteEvent(map[string]any{"error": errObj})
+			_ = sse.WriteDone()
 			done = true
 		})
 		return
@@ -392,11 +391,11 @@ func (s *Server) streamChat(
 	writeLocked(func() {
 		startStream()
 		if streamedChars == 0 && result.Turn.Text != "" {
-			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: result.Turn.Text}, nil))
+			_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: result.Turn.Text}, nil))
 		}
 		if len(result.Turn.ToolUses) > 0 && streamedToolCalls == 0 {
 			for i, tool := range result.Turn.ToolUses {
-				_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
+				_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
 					ToolCalls: []openai.ToolCall{{
 						Index: i,
 						ID:    strutil.First(tool.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
@@ -413,10 +412,10 @@ func (s *Server) streamChat(
 		if len(result.Turn.ToolUses) > 0 {
 			finishReason = "tool_calls"
 		}
-		_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{}, &finishReason))
+		_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{}, &finishReason))
 		// OpenAI stream_options.include_usage 风格：收尾 chunk 带 usage、choices 为空。
-		_ = httputil.WriteSSE(w, openai.StreamUsageChunk(id, providerModel.PublicModel, openai.UsageFromProvider(result.Turn.Usage)))
-		httputil.WriteSSEDone(w)
+		_ = sse.WriteEvent(openai.StreamUsageChunk(id, providerModel.PublicModel, openai.UsageFromProvider(result.Turn.Usage)))
+		_ = sse.WriteDone()
 		done = true
 	})
 }

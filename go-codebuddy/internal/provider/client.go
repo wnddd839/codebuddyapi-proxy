@@ -127,6 +127,8 @@ type Usage struct {
 	CacheCreationInputTokens int                      `json:"cache_creation_input_tokens,omitempty"`
 	PromptCacheHitTokens     int                      `json:"prompt_cache_hit_tokens,omitempty"`
 	PromptCacheMissTokens    int                      `json:"prompt_cache_miss_tokens,omitempty"`
+	// Source 区分上游真实值与本地估算：upstream | estimated。
+	Source string `json:"usage_source,omitempty"`
 }
 
 func (u Usage) CachedTokens() int {
@@ -502,11 +504,20 @@ func (c *Client) readSSE(body io.Reader, opts ChatOptions) (Result, error) {
 		if data == "" || data == "[DONE]" {
 			return
 		}
-		var payload any
-		if err := json.Unmarshal([]byte(data), &payload); err != nil {
-			return
+		raw := []byte(data)
+		// 热路径优先 typed OpenAI chunk，减少 map[string]any 分配；非 OpenAI 形态再回退。
+		var events []Event
+		var chunk openAISSEChunk
+		if err := json.Unmarshal(raw, &chunk); err == nil && chunk.looksOpenAI() {
+			events = eventsFromOpenAIChunk(chunk)
+		} else {
+			var payload any
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				return
+			}
+			events = MapSSEEvent(payload)
 		}
-		for _, event := range MapSSEEvent(payload) {
+		for _, event := range events {
 			eventCount++
 			acc.push(event)
 			if opts.OnEvent != nil {
@@ -527,11 +538,11 @@ func (c *Client) readSSE(body io.Reader, opts ChatOptions) (Result, error) {
 			trimmed := strings.TrimRight(line, "\r\n")
 			if trimmed == "" {
 				flush()
-			} else if strings.HasPrefix(trimmed, "data:") {
+			} else if payload, ok := strings.CutPrefix(trimmed, "data:"); ok {
 				if dataBuf.Len() > 0 {
 					dataBuf.WriteByte('\n')
 				}
-				dataBuf.WriteString(strings.TrimSpace(strings.TrimPrefix(trimmed, "data:")))
+				dataBuf.WriteString(strings.TrimSpace(payload))
 			}
 		}
 		if err == io.EOF {
@@ -543,11 +554,85 @@ func (c *Client) readSSE(body io.Reader, opts ChatOptions) (Result, error) {
 		}
 	}
 	return Result{
-		Turn:       acc.snapshot(estimatePromptText(opts.Messages)),
+		// 上游已给 usage 时跳过整段 messages 估算，避免长上下文白烧 CPU。
+		Turn: acc.snapshot(func() string {
+			return estimatePromptText(opts.Messages)
+		}),
 		Bytes:      bytesRead,
 		EventCount: eventCount,
 		DeltaCount: deltaCount,
 	}, nil
+}
+
+// openAISSEChunk 覆盖 protocol_direct 主流式帧，避免每事件 Unmarshal(map)。
+type openAISSEChunk struct {
+	Choices []openAISSEChoice `json:"choices"`
+	Usage   map[string]any    `json:"usage"`
+}
+
+type openAISSEChoice struct {
+	Delta        *openAISSEDelta `json:"delta"`
+	Message      *openAISSEDelta `json:"message"`
+	FinishReason string          `json:"finish_reason"`
+}
+
+type openAISSEDelta struct {
+	Content   any                 `json:"content"`
+	Text      any                 `json:"text"`
+	ToolCalls []openAISSEToolCall `json:"tool_calls"`
+}
+
+type openAISSEToolCall struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+func (c openAISSEChunk) looksOpenAI() bool {
+	return len(c.Choices) > 0 || c.Usage != nil
+}
+
+func eventsFromOpenAIChunk(chunk openAISSEChunk) []Event {
+	events := make([]Event, 0, 2)
+	if chunk.Usage != nil {
+		if usageEvent := usageEventFromPayload(map[string]any{"usage": chunk.Usage}); usageEvent != nil {
+			events = append(events, *usageEvent)
+		}
+	}
+	if len(chunk.Choices) == 0 {
+		return events
+	}
+	choice := chunk.Choices[0]
+	delta := choice.Delta
+	if delta == nil {
+		delta = choice.Message
+	}
+	if delta != nil {
+		if text := firstText(delta.Content, delta.Text); text != "" {
+			events = append(events, Event{Type: "text_delta", Text: text, Source: "codebuddy_openai"})
+		}
+		for _, tc := range delta.ToolCalls {
+			events = append(events, Event{
+				Type:           "tool_call_delta",
+				Index:          tc.Index,
+				ID:             tc.ID,
+				Name:           tc.Function.Name,
+				ArgumentsDelta: tc.Function.Arguments,
+				Source:         "codebuddy_openai",
+			})
+		}
+	}
+	if finish := strings.TrimSpace(choice.FinishReason); finish != "" {
+		stop := finish
+		if finish == "tool_calls" {
+			stop = "tool_use"
+		}
+		events = append(events, Event{Type: "turn_ended", StopReason: stop, Source: "codebuddy_openai"})
+	}
+	return events
 }
 
 func MapSSEEvent(payload any) []Event {
@@ -717,12 +802,15 @@ func (a *accumulator) push(event Event) {
 	case "usage":
 		if event.Usage != nil {
 			a.usage = *event.Usage
+			if a.usage.Source == "" {
+				a.usage.Source = "upstream"
+			}
 			a.hasUsage = true
 		}
 	}
 }
 
-func (a *accumulator) snapshot(prompt string) Turn {
+func (a *accumulator) snapshot(promptFn func() string) Turn {
 	tools := append([]ToolUse{}, a.toolUses...)
 	for _, frag := range a.fragments {
 		input := map[string]any{}
@@ -753,12 +841,21 @@ func (a *accumulator) snapshot(prompt string) Turn {
 			stop = "end_turn"
 		}
 	}
-	usage := estimateUsage(prompt, a.text)
+	var usage Usage
 	if a.hasUsage {
 		usage = a.usage
+		if usage.Source == "" {
+			usage.Source = "upstream"
+		}
 		if usage.TotalTokens == 0 {
 			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		}
+	} else {
+		prompt := ""
+		if promptFn != nil {
+			prompt = promptFn()
+		}
+		usage = estimateUsage(prompt, a.text)
 	}
 	return Turn{
 		Text:       a.text,
@@ -835,13 +932,42 @@ func ParseUsage(raw map[string]any) Usage {
 }
 
 func estimateUsage(prompt, output string) Usage {
-	promptTokens := max(1, (len(prompt)+3)/4)
-	completionTokens := max(1, (len(output)+3)/4)
+	promptTokens := estimateTokenCount(prompt)
+	completionTokens := estimateTokenCount(output)
 	return Usage{
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
+		Source:           "estimated",
 	}
+}
+
+// estimateTokenCount 按字符估算 token：ASCII ≈4 字符/token，CJK ≈1 字/token。
+// 勿用 len([]byte)：UTF-8 中文 3 字节/字，会系统性低估 50%+。
+func estimateTokenCount(s string) int {
+	if s == "" {
+		return 1
+	}
+	var ascii, cjk, other int
+	for _, r := range s {
+		switch {
+		case r <= 0x7F:
+			ascii++
+		case isCJKRune(r):
+			cjk++
+		default:
+			other++
+		}
+	}
+	return max(1, (ascii+3)/4+cjk+(other+1)/2)
+}
+
+func isCJKRune(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) ||
+		(r >= 0x3400 && r <= 0x4DBF) ||
+		(r >= 0xF900 && r <= 0xFAFF) ||
+		(r >= 0x3040 && r <= 0x30FF) ||
+		(r >= 0xAC00 && r <= 0xD7AF)
 }
 
 func NormalizeModels(input any) []map[string]any {

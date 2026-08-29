@@ -4,7 +4,7 @@ VERSION ?= dev
 LDFLAGS := -s -w
 
 build:
-	go build -ldflags="$(LDFLAGS)" -o bin/codebuddy-proxy ./cmd/codebuddy-proxy
+	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/codebuddy-proxy ./cmd/codebuddy-proxy
 
 test:
 	go test ./...
@@ -31,10 +31,10 @@ clean:
 
 release:
 	@mkdir -p releases
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-windows-amd64.exe ./cmd/codebuddy-proxy
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-linux-amd64 ./cmd/codebuddy-proxy
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-darwin-arm64 ./cmd/codebuddy-proxy
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-darwin-amd64 ./cmd/codebuddy-proxy
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-windows-amd64.exe ./cmd/codebuddy-proxy
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-linux-amd64 ./cmd/codebuddy-proxy
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-darwin-arm64 ./cmd/codebuddy-proxy
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-darwin-amd64 ./cmd/codebuddy-proxy
 	cp .env.example releases/.env.example
 	$(MAKE) release-checksums
 

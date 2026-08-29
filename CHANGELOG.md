@@ -8,6 +8,13 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### 流式热路径：缓冲写出 + token 估算修正
+- 流式 SSE 使用 16KB `bufio` + `fmt.Appendf` 组帧，降低每 chunk 的 syscall/分配。
+- `estimateUsage` 按 rune/CJK 估算，修复中文低估；`usage_source` 区分 upstream/estimated。
+- 上游已返回 usage 时不再无条件 `estimatePromptText`（惰性）。
+- SSE 热路径优先 typed OpenAI chunk 解析，减少 `map[string]any` 分配。
+- Makefile 增加 `-trimpath`；补热路径 benchmark。
+
 ### 全局 panic 兜底 + 适度测试
 - HTTP 入口增加 `recoverHandler`，handler panic 记日志并返回 500，避免进程直接退出。
 - 流式 keep-alive goroutine 用 `safeCall` 包裹，防止后台 panic 拖垮进程。
