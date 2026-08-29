@@ -67,7 +67,13 @@ func (s *Server) ListenAndServe() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	return s.HTTP.Shutdown(ctx)
+	err := s.HTTP.Shutdown(ctx)
+	if s.Svc != nil {
+		if cerr := s.Svc.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}
+	return err
 }
 
 func (s *Server) handleOptions(w http.ResponseWriter, r *http.Request) {

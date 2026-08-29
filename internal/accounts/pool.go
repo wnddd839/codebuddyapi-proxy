@@ -99,11 +99,30 @@ type Selection struct {
 
 type Pool struct {
 	path string
-	mu   sync.Mutex
+
+	mu       sync.RWMutex
+	mem      Store
+	loaded   bool
+	dirty    bool
+	dirReady bool
+
+	persistMu sync.Mutex
+	wakeCh    chan struct{}
+	stopCh    chan struct{}
+	doneCh    chan struct{}
+	closeOnce sync.Once
 }
 
 func NewPool(path string) *Pool {
-	return &Pool{path: path}
+	p := &Pool{
+		path:   path,
+		mem:    EmptyStore(),
+		wakeCh: make(chan struct{}, 1),
+		stopCh: make(chan struct{}),
+		doneCh: make(chan struct{}),
+	}
+	go p.flushLoop()
+	return p
 }
 
 func (p *Pool) Path() string { return p.path }
@@ -112,23 +131,56 @@ func EmptyStore() Store {
 	return Store{Version: 1, Provider: "codebuddy", NextIndex: 0, Accounts: []Account{}}
 }
 
+func cloneStore(store Store) Store {
+	out := store
+	if store.Accounts != nil {
+		out.Accounts = append([]Account(nil), store.Accounts...)
+	}
+	return out
+}
+
 func (p *Pool) Read() (Store, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.readUnlocked()
+	if err := p.ensureLoadedLocked(); err != nil {
+		return Store{}, err
+	}
+	return cloneStore(p.mem), nil
 }
 
 func (p *Pool) Write(store Store) (Store, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	normalized := NormalizeStore(store)
-	if err := p.writeUnlocked(normalized); err != nil {
+	p.mu.Lock()
+	p.mem = cloneStore(normalized)
+	p.loaded = true
+	p.dirty = false
+	snap := cloneStore(p.mem)
+	p.mu.Unlock()
+	if err := p.writeDisk(snap); err != nil {
+		p.mu.Lock()
+		p.dirty = true
+		p.mu.Unlock()
+		p.kickFlush()
 		return Store{}, err
 	}
-	return normalized, nil
+	return cloneStore(normalized), nil
 }
 
-func (p *Pool) readUnlocked() (Store, error) {
+func (p *Pool) ensureLoadedLocked() error {
+	if p.loaded {
+		return nil
+	}
+	store, err := p.readDisk()
+	if err != nil {
+		return err
+	}
+	p.mem = store
+	p.loaded = true
+	p.dirty = false
+	return nil
+}
+
+func (p *Pool) readDisk() (Store, error) {
 	data, err := os.ReadFile(p.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return EmptyStore(), nil
@@ -143,11 +195,16 @@ func (p *Pool) readUnlocked() (Store, error) {
 	return NormalizeStore(raw), nil
 }
 
-func (p *Pool) writeUnlocked(store Store) error {
-	if err := os.MkdirAll(filepath.Dir(p.path), 0o700); err != nil {
-		return err
+func (p *Pool) writeDisk(store Store) error {
+	p.persistMu.Lock()
+	defer p.persistMu.Unlock()
+	if !p.dirReady {
+		if err := os.MkdirAll(filepath.Dir(p.path), 0o700); err != nil {
+			return err
+		}
+		p.dirReady = true
 	}
-	payload, err := json.MarshalIndent(store, "", "  ")
+	payload, err := json.Marshal(store)
 	if err != nil {
 		return err
 	}
@@ -157,6 +214,84 @@ func (p *Pool) writeUnlocked(store Store) error {
 		return err
 	}
 	return os.Rename(tmp, p.path)
+}
+
+func (p *Pool) markDirtyLocked() {
+	p.dirty = true
+	p.kickFlush()
+}
+
+func (p *Pool) kickFlush() {
+	select {
+	case p.wakeCh <- struct{}{}:
+	default:
+	}
+}
+
+func (p *Pool) Flush() error {
+	p.mu.Lock()
+	if err := p.ensureLoadedLocked(); err != nil {
+		p.mu.Unlock()
+		return err
+	}
+	if !p.dirty {
+		p.mu.Unlock()
+		return nil
+	}
+	snap := cloneStore(p.mem)
+	p.dirty = false
+	p.mu.Unlock()
+	if err := p.writeDisk(snap); err != nil {
+		p.mu.Lock()
+		p.dirty = true
+		p.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+func (p *Pool) Close() error {
+	var err error
+	p.closeOnce.Do(func() {
+		close(p.stopCh)
+		<-p.doneCh
+		err = p.Flush()
+	})
+	return err
+}
+
+func (p *Pool) flushLoop() {
+	defer close(p.doneCh)
+	for {
+		select {
+		case <-p.stopCh:
+			_ = p.Flush()
+			return
+		case <-p.wakeCh:
+			timer := time.NewTimer(250 * time.Millisecond)
+			select {
+			case <-timer.C:
+			case <-p.stopCh:
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				_ = p.Flush()
+				return
+			}
+			for {
+				select {
+				case <-p.wakeCh:
+				default:
+					goto flushed
+				}
+			}
+		flushed:
+			_ = p.Flush()
+		}
+	}
 }
 
 func NormalizeStore(store Store) Store {
@@ -315,10 +450,10 @@ func HasCredentials(account Account) bool {
 func (p *Pool) Select(opts SelectOptions) (Selection, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	store, err := p.readUnlocked()
-	if err != nil {
+	if err := p.ensureLoadedLocked(); err != nil {
 		return Selection{}, err
 	}
+	store := p.mem
 	now := time.Now().UnixMilli()
 	if opts.AccountID != "" {
 		for i, account := range store.Accounts {
@@ -335,10 +470,9 @@ func (p *Pool) Select(opts SelectOptions) (Selection, error) {
 				return Selection{}, fmt.Errorf("CodeBuddy account site mismatch: account=%s, configured=%s", account.Site, config.NormalizeSite(opts.Site))
 			}
 			store.Accounts[i].LastSelectedAt = now
-			if err := p.writeUnlocked(store); err != nil {
-				return Selection{}, err
-			}
-			return Selection{Source: "pool", Account: store.Accounts[i], Index: i, Store: store}, nil
+			p.mem = store
+			p.markDirtyLocked()
+			return Selection{Source: "pool", Account: store.Accounts[i], Index: i, Store: cloneStore(store)}, nil
 		}
 		return Selection{}, fmt.Errorf("%w: %s", ErrAccountNotFound, opts.AccountID)
 	}
@@ -364,10 +498,9 @@ func (p *Pool) Select(opts SelectOptions) (Selection, error) {
 		}
 		store.Accounts[idx].LastSelectedAt = now
 		store.NextIndex = (idx + 1) % len(store.Accounts)
-		if err := p.writeUnlocked(store); err != nil {
-			return Selection{}, err
-		}
-		return Selection{Source: "pool", Account: store.Accounts[idx], Index: idx, Store: store}, nil
+		p.mem = store
+		p.markDirtyLocked()
+		return Selection{Source: "pool", Account: store.Accounts[idx], Index: idx, Store: cloneStore(store)}, nil
 	}
 	if opts.Site != "" {
 		return Selection{}, fmt.Errorf("%w for site=%s", ErrNoAccounts, config.NormalizeSite(opts.Site))
@@ -387,36 +520,36 @@ func (p *Pool) MarkResult(selection Selection, ok bool, errMsg string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	store, err := p.readUnlocked()
-	if err != nil {
+	if err := p.ensureLoadedLocked(); err != nil {
 		return err
 	}
 	now := time.Now().UnixMilli()
-	for i := range store.Accounts {
-		if store.Accounts[i].ID != selection.Account.ID {
+	for i := range p.mem.Accounts {
+		if p.mem.Accounts[i].ID != selection.Account.ID {
 			continue
 		}
-		store.Accounts[i].LastUsedAt = now
+		p.mem.Accounts[i].LastUsedAt = now
 		if ok {
-			store.Accounts[i].SuccessRequests++
-			store.Accounts[i].LastError = ""
+			p.mem.Accounts[i].SuccessRequests++
+			p.mem.Accounts[i].LastError = ""
 		} else {
-			store.Accounts[i].FailedRequests++
-			store.Accounts[i].LastError = strutil.Truncate(errMsg, 600)
+			p.mem.Accounts[i].FailedRequests++
+			p.mem.Accounts[i].LastError = strutil.Truncate(errMsg, 600)
 		}
-		break
+		p.markDirtyLocked()
+		return nil
 	}
-	return p.writeUnlocked(store)
+	return nil
 }
 
 func (p *Pool) Upsert(account Account) (Account, Store, error) {
+	normalized := CreateAccount(account)
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	store, err := p.readUnlocked()
-	if err != nil {
+	if err := p.ensureLoadedLocked(); err != nil {
+		p.mu.Unlock()
 		return Account{}, Store{}, err
 	}
-	normalized := CreateAccount(account)
+	store := p.mem
 	replaced := false
 	for i, existing := range store.Accounts {
 		if existing.ID == normalized.ID ||
@@ -437,25 +570,32 @@ func (p *Pool) Upsert(account Account) (Account, Store, error) {
 		store.Accounts = append(store.Accounts, normalized)
 	}
 	store = NormalizeStore(store)
-	if err := p.writeUnlocked(store); err != nil {
+	p.mem = store
+	p.dirty = false
+	snap := cloneStore(store)
+	p.mu.Unlock()
+	if err := p.writeDisk(snap); err != nil {
+		p.mu.Lock()
+		p.dirty = true
+		p.mu.Unlock()
 		return Account{}, Store{}, err
 	}
-	for _, item := range store.Accounts {
+	for _, item := range snap.Accounts {
 		if item.ID == normalized.ID {
-			return item, store, nil
+			return item, cloneStore(snap), nil
 		}
 	}
-	return normalized, store, nil
+	return normalized, cloneStore(snap), nil
 }
 
 func (p *Pool) Delete(id string) (Store, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	store, err := p.readUnlocked()
-	if err != nil {
+	if err := p.ensureLoadedLocked(); err != nil {
+		p.mu.Unlock()
 		return Store{}, err
 	}
-	next := store.Accounts[:0]
+	store := p.mem
+	next := make([]Account, 0, len(store.Accounts))
 	found := false
 	for _, account := range store.Accounts {
 		if account.ID == id {
@@ -465,56 +605,81 @@ func (p *Pool) Delete(id string) (Store, error) {
 		next = append(next, account)
 	}
 	if !found {
-		return store, fmt.Errorf("%w: %s", ErrAccountNotFound, id)
+		out := cloneStore(store)
+		p.mu.Unlock()
+		return out, fmt.Errorf("%w: %s", ErrAccountNotFound, id)
 	}
 	store.Accounts = next
 	store = NormalizeStore(store)
-	if err := p.writeUnlocked(store); err != nil {
+	p.mem = store
+	p.dirty = false
+	snap := cloneStore(store)
+	p.mu.Unlock()
+	if err := p.writeDisk(snap); err != nil {
+		p.mu.Lock()
+		p.dirty = true
+		p.mu.Unlock()
 		return Store{}, err
 	}
-	return store, nil
+	return cloneStore(snap), nil
 }
 
 func (p *Pool) SetEnabled(id string, enabled bool) (Account, Store, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	store, err := p.readUnlocked()
-	if err != nil {
+	if err := p.ensureLoadedLocked(); err != nil {
+		p.mu.Unlock()
 		return Account{}, Store{}, err
 	}
-	for i := range store.Accounts {
-		if store.Accounts[i].ID != id {
+	for i := range p.mem.Accounts {
+		if p.mem.Accounts[i].ID != id {
 			continue
 		}
-		store.Accounts[i].Enabled = enabled
-		store.Accounts[i].UpdatedAt = time.Now().UnixMilli()
-		if err := p.writeUnlocked(store); err != nil {
+		p.mem.Accounts[i].Enabled = enabled
+		p.mem.Accounts[i].UpdatedAt = time.Now().UnixMilli()
+		acc := p.mem.Accounts[i]
+		p.dirty = false
+		snap := cloneStore(p.mem)
+		p.mu.Unlock()
+		if err := p.writeDisk(snap); err != nil {
+			p.mu.Lock()
+			p.dirty = true
+			p.mu.Unlock()
 			return Account{}, Store{}, err
 		}
-		return store.Accounts[i], store, nil
+		return acc, cloneStore(snap), nil
 	}
-	return Account{}, store, fmt.Errorf("%w: %s", ErrAccountNotFound, id)
+	out := cloneStore(p.mem)
+	p.mu.Unlock()
+	return Account{}, out, fmt.Errorf("%w: %s", ErrAccountNotFound, id)
 }
 
 func (p *Pool) ReplaceAccount(account Account) (Account, Store, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	store, err := p.readUnlocked()
-	if err != nil {
+	if err := p.ensureLoadedLocked(); err != nil {
+		p.mu.Unlock()
 		return Account{}, Store{}, err
 	}
-	for i := range store.Accounts {
-		if store.Accounts[i].ID != account.ID {
+	for i := range p.mem.Accounts {
+		if p.mem.Accounts[i].ID != account.ID {
 			continue
 		}
 		account.UpdatedAt = time.Now().UnixMilli()
-		store.Accounts[i] = account
-		if err := p.writeUnlocked(NormalizeStore(store)); err != nil {
+		p.mem.Accounts[i] = account
+		p.mem = NormalizeStore(p.mem)
+		p.dirty = false
+		snap := cloneStore(p.mem)
+		p.mu.Unlock()
+		if err := p.writeDisk(snap); err != nil {
+			p.mu.Lock()
+			p.dirty = true
+			p.mu.Unlock()
 			return Account{}, Store{}, err
 		}
-		return account, store, nil
+		return account, cloneStore(snap), nil
 	}
-	return Account{}, store, fmt.Errorf("%w: %s", ErrAccountNotFound, account.ID)
+	out := cloneStore(p.mem)
+	p.mu.Unlock()
+	return Account{}, out, fmt.Errorf("%w: %s", ErrAccountNotFound, account.ID)
 }
 
 type Summary struct {

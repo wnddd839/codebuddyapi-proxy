@@ -28,6 +28,7 @@ func testServer(t *testing.T, requireAPIKey bool, adminPassword, apiKey string) 
 		Transport:     config.DefaultTransport,
 	}
 	svc := gateway.New(cfg, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	t.Cleanup(func() { _ = svc.Close() })
 	return New(cfg, svc)
 }
 

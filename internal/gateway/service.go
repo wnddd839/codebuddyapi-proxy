@@ -99,6 +99,13 @@ func New(cfg config.Config, logger *slog.Logger) *Service {
 	return svc
 }
 
+func (s *Service) Close() error {
+	if s == nil || s.Pool == nil {
+		return nil
+	}
+	return s.Pool.Close()
+}
+
 // Config returns a snapshot of the runtime config (safe for concurrent readers).
 func (s *Service) Config() config.Config {
 	if p := s.runtimeCfg.Load(); p != nil {
