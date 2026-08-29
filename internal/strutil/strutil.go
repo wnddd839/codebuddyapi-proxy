@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// First returns the first non-empty trimmed string using cmp.Or (Go 1.22+).
+// First 返回第一个非空（trim 后）字符串，基于 cmp.Or（Go 1.22+）。
 func First(values ...string) string {
 	cleaned := make([]string, 0, len(values))
 	for _, value := range values {
@@ -23,12 +23,12 @@ func First(values ...string) string {
 	return cmp.Or(cleaned...)
 }
 
-// Compact trims surrounding whitespace.
+// Compact 去除首尾空白。
 func Compact(value string) string {
 	return strings.TrimSpace(value)
 }
 
-// Truncate returns at most n bytes of the trimmed input.
+// Truncate 返回 trim 后最多 n 字节的子串。
 func Truncate(value string, n int) string {
 	value = strings.TrimSpace(value)
 	if n < 0 {
@@ -40,7 +40,7 @@ func Truncate(value string, n int) string {
 	return value[:n]
 }
 
-// RandomHex returns n random bytes encoded as lowercase hex (2n chars).
+// RandomHex 生成 n 字节随机数的十六进制串（2n 个字符）。
 func RandomHex(n int) string {
 	if n < 1 {
 		n = 1
@@ -50,7 +50,7 @@ func RandomHex(n int) string {
 	return hex.EncodeToString(buf)
 }
 
-// MaskSecret masks the middle of a secret, keeping `visible` chars on each side.
+// MaskSecret 遮蔽密钥中间段，两侧各保留 visible 个字符。
 func MaskSecret(value string, visible int) string {
 	text := strings.TrimSpace(value)
 	if text == "" {

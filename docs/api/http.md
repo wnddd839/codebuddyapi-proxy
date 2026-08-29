@@ -1,8 +1,29 @@
 # HTTP API
 
+所有 `/v1` 接口要求 Header：
+
+```http
+Authorization: Bearer <CODEBUDDY_PROXY_API_KEY>
+```
+
+也接受 `X-API-Key` 作为备选 Header（二者任一匹配即可）。
+当 `CODEBUDDY_PROXY_REQUIRE_API_KEY=false` 时 `/v1` 免鉴权。
+
+鉴权失败统一返回：
+
+```json
+{"error":{"message":"Missing or invalid API key","type":"authentication_error"}}
+```
+
+> Key 比对使用 `crypto/subtle` 常量时间比较。
+
+---
+
 ## Public
 
-### `GET /health`
+### `GET /health` · `HEAD /health`
+
+无需鉴权。
 
 ```json
 {"ok":true,"provider":"codebuddy","transport":"protocol_direct"}
@@ -10,53 +31,190 @@
 
 ### `GET /v1/models`
 
-Header: `Authorization: Bearer <API_KEY>`
+别名：`GET /models`
 
-返回 OpenAI list 形状。优先上游 `/v3/config`，失败回退配置中的 `auto`。
+Query：
 
-### `POST /v1/chat/completions`
+| 参数 | 说明 |
+|------|------|
+| `fresh` | `1` / `true` / `yes` / `on` 强制回源，忽略 60s 缓存 |
 
-Header: `Authorization: Bearer <API_KEY>`
-
-Body（节选）：
+返回 OpenAI `list` 形状。模型来源优先级：上游 `/v3/config` → 配置中的 `CODEBUDDY_PROXY_MODELS`（默认 `auto`）。
 
 ```json
 {
-  "model": "glm-5.2",
-  "stream": true,
-  "messages": [{"role":"user","content":"hello"}]
+  "object": "list",
+  "data": [
+    {
+      "id": "auto",
+      "object": "model",
+      "created": 1787986908,
+      "owned_by": "codebuddy",
+      "credits": "1",
+      "credit_multiplier": 1,
+      "free": false,
+      "description": "..."
+    }
+  ]
 }
 ```
 
-- `stream=false` → `application/json`
-- `stream=true` → `text/event-stream`，结束发送 `data: [DONE]`
+`credits` / `credit_multiplier` / `free` / `description` 为可选字段，仅当上游提供时出现。
 
-兼容别名：`/models`、`/chat/completions`。
+单一模型查询 `GET /v1/models/{id}` **不支持**，会返回 404 `not_found_error`。请拉取列表后在客户端侧匹配 `id`。
+
+**模型缓存**：默认 60s TTL。切换号池区域会自动失效；管理台「刷新模型」走 `fresh=true`。
+并发 cache miss 由本地 singleflight 合并，不会打爆上游 `/v3/config`。
+
+### `POST /v1/chat/completions`
+
+别名：`POST /chat/completions`
+
+```json
+{
+  "model": "auto",
+  "stream": true,
+  "messages": [{"role": "user", "content": "hello"}],
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "max_tokens": 4096,
+  "tools": [],
+  "tool_choice": "auto"
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `model` | 支持 `codebuddy/<id>` / `codebuddy:<id>` 前缀，会被剥离为上游 ID；空或 `default` 归一为 `auto` |
+| `stream` | `false` → `application/json`；`true` → `text/event-stream` |
+| `max_tokens` / `max_completion_tokens` | 二者取正数，后者优先 |
+| `tool_choice` | 对象型会被归一为 `auto` / `none` / `required` |
+
+**流式行为**：
+
+1. 连接建立后**立即**发送 SSE 头与首个 `role=assistant` chunk，客户端不会把上游 TTFB 误判为挂起
+2. 期间按 `CODEBUDDY_PROXY_STREAM_KEEPALIVE_MS`（默认 5000ms）发送 `: keep-alive` 注释
+3. 结束时发送 finish chunk（`stop` 或 `tool_calls`）
+4. 再发一条 `stream_options.include_usage` 风格的 usage chunk（`choices: []`）
+5. 最后 `data: [DONE]`
+
+usage chunk 形如：
+
+```json
+{
+  "id": "chatcmpl_codebuddy_...",
+  "object": "chat.completion.chunk",
+  "model": "auto",
+  "choices": [],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 34,
+    "total_tokens": 46,
+    "prompt_tokens_details": {"cached_tokens": 8},
+    "cache_read_input_tokens": 8
+  }
+}
+```
+
+缓存字段同时兼容 Anthropic / DeepSeek 别名（`cache_read_input_tokens` / `cache_creation_input_tokens` / `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`）。
+
+**流式中的错误**：若首字节未发出，返回 `502` + JSON error；若已开始流式，则在 SSE 内写入 `{"error":{...}}` 后再 `[DONE]`，避免客户端挂死。
+
+客户端主动断开（`context canceled`）按正常结束计，不计入失败。
+
+---
 
 ## Admin UI
 
-- `GET /direct-admin/`
-- Auth: Basic (`admin` / `CODEBUDDY_PROXY_ADMIN_PASSWORD`) 或 Bearer
+- `GET|HEAD /direct-admin` 与 `/direct-admin/`
+
+鉴权（满足任一即可）：
+
+- **免密**：`CODEBUDDY_PROXY_ADMIN_PASSWORD` 为空时直接放行（本地推荐）
+- **Basic Auth**：用户名 `admin` 或留空，密码为 admin 密码
+- **Bearer**：`Authorization: Bearer <admin 密码或 API Key>`
+
+> 已移除 `?password=` query 认证——密钥会泄进代理日志、浏览器历史与 Referer。
+
+---
 
 ## Admin API
 
+统一前缀 `/direct-admin/api/`。鉴权同 Admin UI。
+
+**CSRF**：跨域的写请求（非 GET/HEAD，`Origin` 与本站不一致）返回 `403`：
+
+```json
+{"ok":false,"error":"cross-origin admin mutation blocked"}
+```
+
+### 运行态
+
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/direct-admin/api/status` | 运行状态 + 账号摘要 |
-| GET | `/direct-admin/api/client-config` | 前端配置 |
-| GET | `/direct-admin/api/codebuddy/status` | 账号池 |
+| GET | `/direct-admin/api/status` | 运行状态 + 账号摘要 + 配置快照 |
+| GET | `/direct-admin/api/client-config` | 前端配置（baseUrl / apiKey / site / requireApiKey） |
+| POST | `/direct-admin/api/client-config/generate-key` | 生成 `cbp_...` Key，写入 `.env` 并立即生效 |
+| POST · PUT | `/direct-admin/api/pool-site` | 切换号池区域 `domestic` / `global`，回写 `.env` |
+
+`generate-key` 会同步置 `CODEBUDDY_PROXY_REQUIRE_API_KEY=true`。**旧 Key 立即失效**，客户端必须同步更换。
+
+### 账号池
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/direct-admin/api/codebuddy/status` | 账号池摘要 |
 | GET | `/direct-admin/api/codebuddy/accounts` | 账号列表 |
-| DELETE | `/direct-admin/api/codebuddy/accounts/{id}` | 删除 |
+| DELETE | `/direct-admin/api/codebuddy/accounts/{id}` | 删除账号 |
 | POST | `/direct-admin/api/codebuddy/accounts/{id}/enable` | 启用 |
 | POST | `/direct-admin/api/codebuddy/accounts/{id}/disable` | 禁用 |
-| POST | `/direct-admin/api/codebuddy/accounts/{id}/refresh-token` | 刷新 |
-| GET | `/direct-admin/api/codebuddy/models` | 管理台模型列表 |
-| POST | `/direct-admin/api/codebuddy/oauth/start` | 开始 OAuth |
-| POST | `/direct-admin/api/codebuddy/oauth/poll` | 轮询 OAuth |
-| GET | `/direct-admin/api/codebuddy/oauth/session` | 会话状态 |
-| GET | `/direct-admin/codebuddy/oauth/launch` | 浏览器登录入口 |
-| GET | `/direct-admin/codebuddy/oauth/callback` | 回调页 |
+| GET | `/direct-admin/api/codebuddy/accounts/{id}/usage` | 拉取该账号 Credits（剩余/总额） |
+| POST | `/direct-admin/api/codebuddy/accounts/{id}/refresh-token` | 强制刷新 token |
+
+账号动作未知时返回 `404` + `{"ok":false,"error":"unknown account action"}`。
+
+### 模型
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/direct-admin/api/codebuddy/models` | 模型列表，默认 `fresh=true`；`?fresh=0` 走缓存 |
+| POST | `/direct-admin/api/codebuddy/probe` | 强制回源探测模型（等价 `fresh=true`） |
+
+### OAuth
+
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/direct-admin/api/codebuddy/oauth/start` | 开始 OAuth，body 可带 `site` / `label` / `reuseExisting` |
+| POST | `/direct-admin/api/codebuddy/oauth/poll` | 轮询登录结果 |
+| POST | `/direct-admin/api/codebuddy/oauth/callback` | 同 poll（回调页用） |
+| GET | `/direct-admin/api/codebuddy/oauth/session` | 当前会话状态 |
+| GET · HEAD | `/direct-admin/codebuddy/oauth/launch` | 浏览器登录入口，`?id=&token=` 鉴权后 302 到上游 |
+| GET · HEAD | `/direct-admin/codebuddy/oauth/callback` | OAuth 回调落地页 |
+
+`start` 的 `reuseExisting=true` 且会话仍在 15 分钟 TTL 内时，复用现有 `waiting` 会话而不重新发起。
+
+launch / callback 均设 Cookie `cursor_codebuddy_oauth=<token>`（`HttpOnly`、`SameSite=Lax`、`Max-Age=900`）。
+
+---
 
 ## CORS
 
-`OPTIONS` 允许 `Authorization, Content-Type, X-API-Key`。
+`OPTIONS` 响应：
+
+```http
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Headers: Authorization, Content-Type, X-API-Key
+Access-Control-Allow-Methods: GET,POST,DELETE,OPTIONS
+```
+
+`/v1/models` 与非流式 `/v1/chat/completions` 的成功响应也带 `Access-Control-Allow-Origin: *`。
+
+---
+
+## 未匹配路由
+
+兜底返回 `404`：
+
+```json
+{"error":{"message":"Unsupported route: /v1/models/auto","type":"not_found_error"}}
+```

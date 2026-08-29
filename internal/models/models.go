@@ -69,7 +69,7 @@ func PublicModelID(upstreamID string) string {
 	if cleaned == "" || lower == "default" || lower == "codebuddy" || lower == "codebuddy/" || lower == "codebuddy:" {
 		return "auto"
 	}
-	// Prefixes are ASCII, so len(prefix) aligns on the original-cased input.
+	// 前缀为 ASCII，len(prefix) 与原大小写输入对齐。
 	for _, prefix := range []string{"codebuddy/", "codebuddy:"} {
 		if _, ok := strings.CutPrefix(lower, prefix); ok {
 			rest := strings.TrimSpace(cleaned[len(prefix):])

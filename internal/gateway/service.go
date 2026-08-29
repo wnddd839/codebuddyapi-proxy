@@ -21,7 +21,18 @@ import (
 	"github.com/wnddd839/codebuddy-proxy/internal/strutil"
 )
 
-const modelsCacheTTL = 60 * time.Second
+const (
+	modelsCacheTTL = 60 * time.Second
+	// maxCompleteRetryDepth 限制换号 / OAuth 刷新递归，避免账号规模变大后指数重试。
+	maxCompleteRetryDepth = 3
+)
+
+var (
+	// 包级预编译，避免热路径（每个 chat 请求）重复编译正则。
+	reProviderModel    = regexp.MustCompile(`(?i)^codebuddy(?:(?:/|:)(.*))?$`)
+	reAuthFailure      = regexp.MustCompile(`(?i)(?:\b401\b|\b403\b|unauthori[sz]ed|forbidden|token|credential|auth|login|not authenticated|未登录|登录|凭证)`)
+	reRetryNextAccount = regexp.MustCompile(`(?i)11140|request illegal|site mismatch|invalid request`)
+)
 
 type Stats struct {
 	TotalRequests         int64  `json:"totalRequests"`
@@ -113,7 +124,7 @@ func (s *Service) Close() error {
 	return s.Pool.Close()
 }
 
-// Config returns a snapshot of the runtime config (safe for concurrent readers).
+// Config 返回运行时配置快照，并发读安全。
 func (s *Service) Config() config.Config {
 	if p := s.runtimeCfg.Load(); p != nil {
 		return *p
@@ -139,7 +150,7 @@ func (s *Service) updateConfig(mutate func(*config.Config)) config.Config {
 	}
 }
 
-// SetAPIKey rotates the gateway API key and forces requireApiKey=true.
+// SetAPIKey 轮换网关 API Key，并强制开启 requireApiKey。
 func (s *Service) SetAPIKey(key string) config.Config {
 	return s.updateConfig(func(c *config.Config) {
 		c.APIKey = key
@@ -155,8 +166,7 @@ type ProviderModel struct {
 
 func ResolveProviderModel(model string) ProviderModel {
 	cleaned := strings.TrimSpace(model)
-	re := regexp.MustCompile(`(?i)^codebuddy(?:(?:/|:)(.*))?$`)
-	if match := re.FindStringSubmatch(cleaned); match != nil {
+	if match := reProviderModel.FindStringSubmatch(cleaned); match != nil {
 		requested := strings.TrimSpace(match[1])
 		if requested == "" || requested == "default" {
 			requested = "auto"
@@ -184,11 +194,11 @@ type CompleteOptions struct {
 	OnDelta             func(string)
 	OnEvent             func(provider.Event)
 	RefreshRetry        bool
+	RetryDepth          int // 内部递归计数，调用方勿手动设置
 }
 
-// chatOptionsFromAccount builds upstream options using the account as the
-// source of truth for region. Proxy process location / global CODEBUDDY_BASE_URL
-// must not send a domestic account to www.codebuddy.ai (or the reverse).
+// chatOptionsFromAccount 以账号为区域真源构建上游请求。
+// 反代进程所在位置 / 全局 CODEBUDDY_BASE_URL 不得把国内账号打到海外（反之亦然）。
 func (s *Service) chatOptionsFromAccount(account accounts.Account, opts CompleteOptions) provider.ChatOptions {
 	site := config.NormalizeSite(strutil.First(account.Site, s.Config().Site))
 	internet := strutil.First(account.InternetEnvironment, s.Config().InternetEnvironment)
@@ -214,10 +224,10 @@ func (s *Service) chatOptionsFromAccount(account accounts.Account, opts Complete
 		BaseURL:             baseURL,
 		Site:                site,
 		InternetEnvironment: internet,
-		// Prefer account APIEndpoint only — process-wide endpoint can point at the wrong region.
+		// 仅使用账号级 APIEndpoint，进程级 endpoint 可能指向错误区域。
 		APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
 		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Config().ChatCompletionsPath),
-		// Domain intentionally omitted: X-Domain is derived from the chat endpoint host.
+		// 不传 Domain：X-Domain 由 chat endpoint 主机名推导。
 		EnterpriseID:       account.EnterpriseID,
 		TenantID:           account.TenantID,
 		DepartmentFullName: account.DepartmentFullName,
@@ -233,8 +243,10 @@ type CompleteResult struct {
 }
 
 func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (CompleteResult, error) {
-	// Active pool site (admin one-click switch) restricts which accounts may be used.
-	// The selected account still decides domestic vs global upstream endpoints.
+	if opts.RetryDepth >= maxCompleteRetryDepth {
+		return CompleteResult{}, fmt.Errorf("CodeBuddy 请求重试深度超限（max=%d）", maxCompleteRetryDepth)
+	}
+	// 当前号池区域（管理台一键切换）限制可选账号；具体 upstream 仍由账号 site 决定。
 	selection, err := s.Pool.Select(accounts.SelectOptions{
 		AccountID:  opts.AccountID,
 		Site:       s.ActivePoolSite(),
@@ -251,7 +263,7 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 	chatOpts := s.chatOptionsFromAccount(account, opts)
 	result, err := s.Provider.Complete(ctx, chatOpts)
 	if err != nil {
-		// Client closed the SSE / HTTP request — not an account/upstream failure.
+		// 客户端主动断开 SSE/HTTP，不算账号或上游故障。
 		if errors.Is(err, context.Canceled) || strings.Contains(strings.ToLower(err.Error()), "context canceled") {
 			s.Log.Info("codebuddy request canceled by client", "accountId", account.ID, "model", opts.Model)
 			return CompleteResult{}, err
@@ -261,9 +273,10 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 			next := append(append([]string{}, opts.ExcludeIDs...), account.ID)
 			opts.ExcludeIDs = next
 			opts.AccountID = ""
+			opts.RetryDepth++
 			retried, retryErr := s.CompleteFromPool(ctx, opts)
 			if retryErr != nil {
-				// Don't hide the real upstream failure behind "no enabled accounts".
+				// 不要用「无可用账号」掩盖真实上游错误。
 				if errors.Is(retryErr, accounts.ErrNoAccounts) || strings.Contains(retryErr.Error(), "no enabled CodeBuddy accounts") {
 					return CompleteResult{}, err
 				}
@@ -276,6 +289,7 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 				s.Log.Info("retrying codebuddy request after oauth refresh", "accountId", refreshed.Account.ID)
 				opts.AccountID = refreshed.Account.ID
 				opts.RefreshRetry = true
+				opts.RetryDepth++
 				return s.CompleteFromPool(ctx, opts)
 			}
 		}
@@ -335,14 +349,13 @@ func (s *Service) shouldRefreshAfterFailure(err error, selection accounts.Select
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	// Policy / request-shape errors are not fixed by refreshing credentials.
+	// 策略 / 请求形态错误，刷新凭证也救不了。
 	if strings.Contains(msg, "11140") || strings.Contains(msg, "request illegal") ||
 		strings.Contains(msg, "11128") || strings.Contains(msg, "unapproved channel") ||
 		strings.Contains(msg, "11101") || strings.Contains(msg, "11102") {
 		return false
 	}
-	re := regexp.MustCompile(`(?i)(?:\b401\b|\b403\b|unauthori[sz]ed|forbidden|token|credential|auth|login|not authenticated|未登录|登录|凭证)`)
-	return re.MatchString(msg)
+	return reAuthFailure.MatchString(msg)
 }
 
 func (s *Service) shouldRetryNextAccount(err error, selection accounts.Selection, opts CompleteOptions) bool {
@@ -358,12 +371,11 @@ func (s *Service) shouldRetryNextAccount(err error, selection accounts.Selection
 		return false
 	}
 	msg := err.Error()
-	// 11128 is channel/policy — retrying another account with the same client fingerprint rarely helps.
+	// 11128 为渠道/策略限制，换号重试通常无效（客户端指纹相同）。
 	if strings.Contains(msg, "11128") || strings.Contains(strings.ToLower(msg), "unapproved channel") {
 		return false
 	}
-	re := regexp.MustCompile(`(?i)11140|request illegal|site mismatch|invalid request`)
-	return re.MatchString(msg)
+	return reRetryNextAccount.MatchString(msg)
 }
 
 func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult, error) {
@@ -592,9 +604,8 @@ func emptyOAuthSession() OAuthSession {
 	return OAuthSession{Status: "idle"}
 }
 
-// LiveOAuthSession returns a value snapshot of the current OAuth session.
-// Prefer OAuthLaunchAuthorized for credential checks so callers never race
-// on a shared mutable pointer.
+// LiveOAuthSession 返回当前 OAuth 会话的值快照。
+// 鉴权请优先用 OAuthLaunchAuthorized，避免共享指针竞态。
 func (s *Service) LiveOAuthSession() OAuthSession {
 	return s.CurrentOAuth()
 }
@@ -626,7 +637,7 @@ func (s *Service) StartOAuth(ctx context.Context, site, label, publicOrigin stri
 		s.mu.Unlock()
 		return payload, nil
 	}
-	// Reset under lock; launch/callback authorize via id+token snapshot checks.
+	// 持锁重置；launch/callback 通过 id+token 快照校验授权。
 	s.resetOAuthSessionLocked(site, label, publicOrigin)
 	sessionID := s.oauth.ID
 	sessionSite := s.oauth.Site

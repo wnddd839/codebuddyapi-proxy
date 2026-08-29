@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// AdminMutationAllowed rejects browser cross-site state-changing admin calls.
-// Non-browser clients (no Origin/Referer) remain allowed for local curl/CLI use.
+// AdminMutationAllowed 拒绝浏览器跨站发起的管理台写操作。
+// 无 Origin/Referer 的非浏览器客户端（curl/CLI）仍允许，便于本地调试。
 func AdminMutationAllowed(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
