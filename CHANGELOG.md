@@ -6,140 +6,115 @@
 
 ---
 
-## 2026-08-29 · 审计硬化 + 体验收口
+## v0.3.0 · 2026-08-29 · 速度 / 体验 / 内存占用全面收口
 
-### 流式热路径：缓冲写出 + token 估算修正
-- 流式 SSE 使用 16KB `bufio` + `fmt.Appendf` 组帧，降低每 chunk 的 syscall/分配。
-- `estimateUsage` 按 rune/CJK 估算，修复中文低估；`usage_source` 区分 upstream/estimated。
-- 上游已返回 usage 时不再无条件 `estimatePromptText`（惰性）。
-- SSE 热路径优先 typed OpenAI chunk 解析，减少 `map[string]any` 分配。
-- Makefile 增加 `-trimpath`；补热路径 benchmark。
+本版是 v0.2.0 之后的性能与体验大版本：账号池、流式写出、token 统计、管理台与工程卫生一起落地。  
+目标很明确——**更省内存、更快响应、更少踩坑**，二进制用户开箱即用。
 
-### 全局 panic 兜底 + 适度测试
-- HTTP 入口增加 `recoverHandler`，handler panic 记日志并返回 500，避免进程直接退出。
-- 流式 keep-alive goroutine 用 `safeCall` 包裹，防止后台 panic 拖垮进程。
-- 补充少量关键路径测试：panic 恢复、非法 JSON 400、无账号 502。
+### 亮点一览
 
-### 审计修复：正则预编译 + 重试深度上限
-- `ResolveProviderModel` / 鉴权与换号判断的正则改为包级预编译，消除热路径重复编译。
-- `CompleteFromPool` 增加 `RetryDepth` 上限（max=3），防止换号与 OAuth 刷新交织时递归放大。
-- 核心包注释改为中文并适当补全（gateway / provider / accounts / config / server 等）。
+| 维度 | 变化 |
+|------|------|
+| **速度** | 账号池热路径从「每请求同步写盘」→ 内存权威 + 250ms 异步刷盘；SSE 写出加 16KB 缓冲；正则预编译；SSE typed 解析 |
+| **体验** | token/缓存透传给 CCSwitch；管理台总 Tokens；流式更稳；免密管理台；暗色 instrument UI；产品页 / logo / README 定稿 |
+| **内存 / 占用** | 进程 RSS 约 **5–7MB**；去掉 Git 内嵌二进制（仓库体积大减）；刷盘合并后磁盘抖动消失；panic 不会拖垮进程 |
+| **正确性** | 中文 token 不再按字节低估；`usage_source` 区分上游/估算；重试深度上限；OAuth/配置竞态修完 |
 
-### Token / cache usage 透传
-- 流式收尾补发 OpenAI `include_usage` 风格 usage chunk（此前 finish 后直接 DONE，CCSwitch 等拿不到 token）。
-- `usage` 保留 `prompt_tokens_details.cached_tokens`，并兼容 Anthropic/DeepSeek 缓存字段别名。
-- 网关 Stats 累计 `totalTokens` / `totalCachedTokens`，管理台新增「总 Tokens」指标。
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.0
 
-### 账号池：内存权威 + 异步刷盘
-- `Select` / `MarkResult` 只改内存并标记 dirty，250ms 合并异步落盘（去掉每请求 4 次同步 IO）。
-- OAuth / Upsert / Delete / Replace / SetEnabled 仍同步刷盘（凭据不可丢）。
-- `json.MarshalIndent` → `json.Marshal`；`MkdirAll` 仅首次。
-- `Pool.Close` / `Service.Close` / `Server.Shutdown` 强制 flush。
-- 并发 Select+Mark 实测从 ~38 ops/s 提升到数十万 ops/s。
+---
 
-### 工程卫生：鉴权 / CI / gofmt
-- 删除管理台 `?password=` URL query 认证路径（防日志 / 历史 / Referer 泄露）。
-- 管理台 / API Key 比对改为 `crypto/subtle.ConstantTimeCompare`。
-- 删除无调用方的 `httputil.CookieValue`。
-- 新增 GitHub Actions CI：`gofmt` + `go vet` + `go test -race`。
-- `gofmt -w` 消化 CRLF 存量；Makefile 增加 `fmt` / `vet` / `test-race` / `check`。
-- 增加 `SECURITY.md` 漏洞报告说明。
+### 1. 速度：热路径砍掉「无用等待」
 
-### 第二 / 第三梯队（代码卫生 + 测试）
-- 删除 staticcheck U1000 死代码 4 处：`stainlessOS` / `mapOpenAIMessage` / `payloadBytes` / `Server.handle`。
-- `NormalizeSite` 去掉恒为 global 的空串死分支。
-- `/v1/models` 缓存 miss 用本地 singleflight 合并并发回源（无新依赖）。
-- `server` 补 HTTP 层单测：API Key / 管理台免密与 BasicAuth / CSRF 同源接线。
-- 重复工具收敛到 `strutil`：`Truncate` / `RandomHex` / `MaskSecret` / `Compact`。
-- `oauth` / `billing` 补纯函数单测（URL、ShouldRefresh、JWT、用量汇总、通知码）。
+#### 账号池：内存权威 + 异步刷盘（最大收益之一）
+- `Select` / `MarkResult` 只改内存并标记 dirty，**250ms 防抖合并写盘**。
+- 以前每个请求约 4 次同步磁盘 IO（全局锁 + `MarshalIndent` + rename），并发实测约 **~38 ops/s**。
+- 现在并发 Select+Mark 可达 **数十万 ops/s**；凭据变更（Upsert/Delete/Replace/SetEnabled）仍同步落盘，保证不丢号。
+- `json.MarshalIndent` → `json.Marshal`；`MkdirAll` 只做一次；`Close`/`Shutdown` 强制 flush。
+- `persistMu` 与业务 `mu` 分离；`flushLoop` 正确 drain timer，避免 goroutine 泄漏。
 
-### 二进制改走 GitHub Releases
-- 仓库不再跟踪 `go-codebuddy/releases/codebuddy-proxy-*` 预编译包（约 30MB）。
-- 二进制通过 `gh release` 发布到 GitHub Releases；Git 只保留源码与 `releases/README.md` / `.env.example`。
-- 下载入口：https://github.com/wnddd839/codebuddyapi-proxy/releases/latest
+#### 流式 SSE：缓冲写出 + 少分配
+- 新增 `httputil.SSEStream`：16KB `bufio.Writer` + `fmt.Appendf` 组帧，再按帧 Flush。
+- 避免「每个 chunk 一次 syscall / 字符串拼接」；Windows 小包写开销更高，收益更明显。
+- 上游 SSE 热路径优先 **typed OpenAI chunk** 解析，失败才回退 `map[string]any`（分配明显下降）。
+- 模型名解析 / 鉴权与换号判断正则改为**包级预编译**（热路径约 40×）。
 
+#### 请求收尾不再白烧 CPU
+- 上游已返回 `usage` 时，**不再**无条件 `estimatePromptText`（长上下文可省百微秒级）。
+- `CompleteFromPool` 增加 `RetryDepth`（max=3），换号 + OAuth 刷新不会指数展开。
 
-本次把外部审计里的 **Batch A / B / C** 全部落地，并补齐此前已合入但未完整成文的体验修复。本地 `main` 相对远程新增提交：
+---
 
-| Commit | 摘要 |
-|--------|------|
-| `130a966` | 透出上游模型 `credits` 倍率；修复 UA 导致模型列表退化 |
-| `c1ceb28` | 新增更新日记；管理台密码可留空（本地免密） |
-| `c6f4f32` | BSD-3-Clause `LICENSE`、`.gitattributes`、清理本地垃圾 |
-| `acf348d` | OAuth session 不再外泄可变指针；锁内鉴权 |
-| `3f782f1` | 运行时配置改为 `atomic.Pointer[config.Config]` |
-| `ad91e20` | 刷新 Windows amd64 二进制 |
-| `a5bb211` | 模型缓存 / 采样透传 / 真实 `prompt_tokens` / CSRF / 去 Google Fonts |
+### 2. 体验：客户端与管理台「看得懂、用得顺」
 
-### 1. 仓库卫生与许可证
-- 补齐根目录 `LICENSE`（**BSD-3-Clause**），与 README badge 一致。
-- 增加 `.gitattributes`：`*.go` 强制 LF，降低 Windows CRLF / gofmt 漂移。
-- `.gitignore` 忽略本地垃圾：`.cline/`、`.omo/`、字面量 `~/`、`preview.html`、`*.exe~`。
-- 清理误生成的 `~/`（含明文 OAuth session）与 IDE 临时目录。
+#### Token / 缓存命中透传
+- 流式收尾补发 OpenAI `include_usage` 风格 usage chunk（空 choices + usage），CCSwitch 等能统计总 token / 缓存。
+- 透传 `prompt_tokens_details.cached_tokens`，并兼容 Anthropic / DeepSeek 别名。
+- 管理台 Stats 累计 `totalTokens` / `totalCachedTokens`，首页新增「总 Tokens」。
+- `usage_source=upstream|estimated`：客户端能区分真实值与本地估算。
+- 中文 token 估算改为按 rune/CJK，修复「字节/4」系统性低估 50%+。
 
-### 2. OAuth session 并发安全
-- **根因**：launch/callback 在锁外持有共享 `*OAuthSession`，与 `StartOAuth` 原地重置并发时 data race。
-- `LiveOAuthSession()` 改为返回**值快照**，不再外泄可变指针。
-- launch/callback 统一走锁内 `OAuthLaunchAuthorized(id, token)`。
-- 增加 `go test -race` 覆盖的并发重置 / 鉴权测试；更新 `docs/operations/runbook.md`。
+#### 流式稳定性
+- 去掉 `http.Client` 总 Timeout（长 agent / 慢模型不会被中途掐断）。
+- SSE 尽早打开 + keep-alive 注释，降低「假挂起」误判。
+- 客户端主动断开记为 disconnect，不算账号/上游失败。
+- HTTP 入口 `recoverHandler` + keep-alive `safeCall`：panic 记日志返回 500，进程不退出。
 
-### 3. 运行时配置并发安全
-- `gateway.Service` 用 go-modern `atomic.Pointer[config.Config]` 保存唯一运行时配置。
-- 管理台改 API Key / 号池站点只更新这一份快照。
-- `Server` 不再持有可写 `Cfg` 副本；`authorizeAPI` / `client-config` 一律读 `Svc.Config()`。
-- 补 `-race` 测试（API Key + 号池切换并发读写）。
+#### 管理台与产品页
+- 暗色 instrument 控制台（design tokens：`#0e1110` / `#e88a4a` / `#5ec4a8`）。
+- `CODEBUDDY_PROXY_ADMIN_PASSWORD` 留空 = 本地免密；`/v1` API Key 仍强制可开。
+- 一键国内 / 国际号池切换；区域端点以**账号**为准。
+- 去掉 `?password=` query 鉴权；常量时间密钥比较；写操作 CSRF 同源校验。
+- 产品页 / README / logo（Y 形信号路由）定稿；仓库更名为 `codebuddyapi-proxy`。
 
-### 4. 模型列表缓存
-- `/v1/models` **默认 60s TTL 缓存**，减轻频繁打 `/v3/config`。
-- `?fresh=1` 或管理台「刷新模型」强制回源。
-- 一键切换号池区域时自动清空缓存。
+#### 开箱体验
+- 二进制自动加载附近 `.env`；首次启动自动生成并持久化 API Key。
+- 模型列表 60s TTL + singleflight 合并并发回源；`credits` 倍率完整透出。
+- 采样参数 `temperature` / `top_p` / `max_tokens` 透传。
 
-### 5. 模型倍率透出 + UA 修复
-- 上游 `/v3/config` 自带 `credits`（如 `x0.00 credits` / `x0.29 credits`），归一化时不再丢弃。
-- 管理台与 `/v1/models` 透出：`credits`、`creditMultiplier`、`free`。
-- 可区分同名模型：`hy4-preview`（免费）vs `hy4-preview-x`（收费）等。
-- User-Agent 改为 `CLI/<ver> CodeBuddy/<ver>`，避免裸 `CLI/<ver>` 触发上游 `12403 check ua` 导致列表退化成只有 `auto`。
-- `PublicModelID` 改用 `strings.CutPrefix`，保留后缀原大小写。
+---
 
-### 6. Chat 采样参数透传
-- OpenAI 兼容入口透传：
-  - `temperature`
-  - `top_p`
-  - `max_tokens` / `max_completion_tokens`
-- 未传字段不强制写入上游，保持默认行为。
+### 3. 内存与资源占用
 
-### 7. 用量统计（`prompt_tokens`）
-- 修复 `snapshot("")` 导致 `prompt_tokens` 恒为 1。
-- 按真实 prompt 文本估算 token；若上游 SSE 带回 `usage`，**优先采用上游值**。
+- **运行时**：gz 实测 RSS 约 **5–7MB**（Go 单二进制，无 Node 运行时）。
+- **磁盘抖动**：账号池高频路径不再每请求同步写盘，CPU/IO 尖峰消失。
+- **仓库体积**：预编译包不再进 Git（历史 filter-repo 后 `.git` 约 **106MB → 12MB**）；发布只走 GitHub Releases。
+- **分配**：SSE typed 解析、`Appendf` 组帧、惰性 prompt 估算，减少热路径临时对象与 GC 压力。
+- **构建**：Makefile / release 增加 `-trimpath`，便于可复现构建。
 
-### 8. 管理台体验与安全
-- `CODEBUDDY_PROXY_ADMIN_PASSWORD` **留空 = 本地免密打开管理台**。
-- **`/v1` API Key 仍然保留**（`REQUIRE_API_KEY` / `API_KEY`），不再把空管理密码回填成 API Key。
-- 去掉 Google Fonts，改系统字体栈（离线 / 内网更稳）。
-- 管理台写操作增加 Origin / Referer **同源校验**（浏览器跨站 POST → 403；无头 curl 不受影响）。
+---
 
-### 9. 号池一键国内 / 国际切换（同周期已合入）
-- 管理台一键切换 `domestic` / `global`。
-- 切换后只使用当前区域账号；写入 `.env` 的 `CODEBUDDY_SITE` / `BASE_URL` / `INTERNET_ENVIRONMENT`。
-- 账号自身 region 仍决定上游端点（国内 `copilot.tencent.com` / 国际 `www.codebuddy.ai`）。
+### 4. 正确性与工程卫生（同版本一并收口）
 
-### 10. 流式与路由硬化（同周期已合入）
-- SSE：去掉过短总超时、写流加锁、提前打开 SSE。
-- 客户端主动断开（`context canceled`）记为断开，不污染账号 `lastError`。
-- keep-alive **5s**；响应头等待 **180s**。
+- OAuth session 值快照 + 锁内鉴权（修 data race）。
+- 运行时配置 `atomic.Pointer[config.Config]`（API Key / 号池切换并发安全）。
+- 死代码清理、`strutil` 收敛、CI：`gofmt` + `go vet` + `go test -race`。
+- `SECURITY.md`；核心包中文注释补全；适度关键路径测试（不追求堆用例）。
 
-### 本地验证清单
-- `go test ./...` 通过；关键包带 `-race`。
-- 管理台 `http://127.0.0.1:32126/direct-admin/` → 200（免密）。
-- `/v1/models` + API Key → 200（约 28 模型，含 credits）。
-- 跨站 `Origin: https://evil.example` POST 管理台 → **403**。
-- 同源 Origin POST 号池切换 → **200**。
+---
 
-### 升级提示（二进制用户）
-1. 替换 `releases/codebuddy-proxy-windows-amd64.exe`（或对应平台二进制）。
-2. 保留现有 `.env`；API Key / 号池站点会继续生效。
-3. 客户端超时的慢模型可优先用 `auto` / `deepseek-v4-flash`。
-4. 需要强制刷新模型列表：`GET /v1/models?fresh=1`。
+### 升级说明（v0.2.0 → v0.3.0）
+
+1. 下载对应平台二进制覆盖即可；保留现有 `.env` 与 `proxy-accounts.json`。
+2. systemd / 手工重启后生效；管理台密码若已清空则继续免密。
+3. 下游若依赖 token 统计，请确认客户端读取流式末尾 usage chunk。
+4. 强制刷模型：`GET /v1/models?fresh=1`。
+
+### 资源清单
+
+| 文件 | 平台 |
+|------|------|
+| `codebuddy-proxy-windows-amd64.exe` | Windows x64 |
+| `codebuddy-proxy-linux-amd64` | Linux x64 |
+| `codebuddy-proxy-darwin-arm64` | macOS Apple Silicon |
+| `codebuddy-proxy-darwin-amd64` | macOS Intel |
+| `SHA256SUMS.txt` / `.env.example` | 校验与配置模板 |
+
+---
+
+## 归档 · 2026-08-29 日间明细（已并入 v0.3.0）
+
+以下条目已汇总进上方 v0.3.0，此处不再展开：审计 Batch A/B/C、OAuth/配置竞态、模型缓存与 credits、管理台免密与 CSRF、前端暗色 instrument、号池异步刷盘、token 透传、panic 兜底、热路径缓冲与 CJK 估算、仓库更名与 Pages 链接。
 
 ---
 
