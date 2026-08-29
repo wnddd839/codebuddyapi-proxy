@@ -33,7 +33,7 @@
 用你自己的 CodeBuddy 账号（OAuth），对外提供标准 OpenAI 兼容接口。  
 管理台里加账号、看 Credits、刷模型；客户端 / NewAPI 只认 `/v1`。
 
-> release传不上去，去产品页可以下载二进制打包。
+> 预编译二进制请从 [GitHub Releases](https://github.com/wnddd839/proxy-codebuddy/releases/latest) 下载（仓库只保留源码）。
 
 仅限你拥有授权、且符合服务条款与合规要求的场景。  
 **不要**把 token、管理密码、API Key 提交进仓库。
@@ -50,7 +50,7 @@
 | **账号池** | 多账号轮询；写盘防误清空；刷新失败只记错误 |
 | **国内 / 国际** | 同一仓库；`.env` + 账号 `site` 切换，JWT 不可混用 |
 | **OpenAI 形状** | `GET /v1/models` · `POST /v1/chat/completions` |
-| **免安装运行** | 预编译二进制在 [`go-codebuddy/releases/`](go-codebuddy/releases/)，Windows 下载 exe 即用 |
+| **免安装运行** | 预编译二进制在 [GitHub Releases](https://github.com/wnddd839/proxy-codebuddy/releases/latest)，Windows 下载 exe 即用 |
 
 ---
 
@@ -58,7 +58,7 @@
 
 ### 方式 A：直接下载（推荐，新手最省事）
 
-1. 从 [产品页](https://wnddd839.github.io/proxy-codebuddy/) 或 [`go-codebuddy/releases/`](go-codebuddy/releases/) 下载对应平台二进制  
+1. 从 [GitHub Releases](https://github.com/wnddd839/proxy-codebuddy/releases/latest) 或 [产品页](https://wnddd839.github.io/proxy-codebuddy/) 下载对应平台二进制  
 2. **直接运行**（同目录会自动读写 `.env`）  
 3. 打开管理台登录 CodeBuddy，把页面上的 **Base URL + API Key** 填进 ZCode / NewAPI
 
@@ -189,7 +189,7 @@ CODEBUDDY_BASE_URL=https://www.codebuddy.ai
 | :--- | :--- |
 | 产品页 | [wnddd839.github.io/proxy-codebuddy](https://wnddd839.github.io/proxy-codebuddy/) |
 | 文档索引 | [`go-codebuddy/docs/README.md`](go-codebuddy/docs/README.md) |
-| 预编译包 | [`go-codebuddy/releases/README.md`](go-codebuddy/releases/README.md) |
+| 预编译包 | [GitHub Releases](https://github.com/wnddd839/proxy-codebuddy/releases/latest) · [`go-codebuddy/releases/README.md`](go-codebuddy/releases/README.md) |
 | 编码标准 | [`go-codebuddy/docs/standards/coding-standards.md`](go-codebuddy/docs/standards/coding-standards.md) |
 
 常用命令（仓库根目录）：

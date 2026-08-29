@@ -1,6 +1,5 @@
 bin/
 *.exe
-!go-codebuddy/releases/*.exe
 *.exe~
 *.test
 *.out
@@ -21,3 +20,8 @@ go-codebuddy/.env
 ~/
 preview.html
 admin-models.json
+
+# prebuilt binaries live on GitHub Releases, not in git
+go-codebuddy/releases/codebuddy-proxy-*
+go-codebuddy/releases/SHA256SUMS.txt
+go-codebuddy/releases/*.exe
