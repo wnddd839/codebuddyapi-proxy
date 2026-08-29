@@ -53,7 +53,7 @@ func New(cfg config.Config, svc *gateway.Service) *Server {
 	mux.HandleFunc("/", s.handleFallback)
 	s.HTTP = &http.Server{
 		Addr:              cfg.Addr(),
-		Handler:           mux,
+		Handler:           recoverHandler(svc.Log, mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       0,
 		WriteTimeout:      0,
@@ -310,21 +310,23 @@ func (s *Server) streamChat(
 	}
 	keepAliveStop := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(keepAlive)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-keepAliveStop:
-				return
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				writeLocked(func() {
-					startStream()
-					httputil.WriteSSEComment(w, "keep-alive")
-				})
+		safeCall(s.Svc.Log, "stream-keep-alive", func() {
+			ticker := time.NewTicker(keepAlive)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-keepAliveStop:
+					return
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					writeLocked(func() {
+						startStream()
+						httputil.WriteSSEComment(w, "keep-alive")
+					})
+				}
 			}
-		}
+		})
 	}()
 	defer close(keepAliveStop)
 
