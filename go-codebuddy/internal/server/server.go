@@ -240,15 +240,15 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if openai.IsClientCanceled(err) {
 			// Client aborted before/during non-stream aggregation — not a gateway fault.
-			finish(true, 0, 0, 0, 0, "")
+			finish(true, 0, 0, 0, 0, "", provider.Usage{})
 			return
 		}
-		finish(false, 0, 0, 0, 0, err.Error())
+		finish(false, 0, 0, 0, 0, err.Error(), provider.Usage{})
 		typ, code := openai.ClassifyUpstream(err)
 		httputil.WriteJSON(w, http.StatusBadGateway, openai.NewErrorWithCode(err.Error(), typ, code))
 		return
 	}
-	finish(true, len(result.Turn.Text), result.Bytes, int64(result.EventCount), int64(result.DeltaCount), "")
+	finish(true, len(result.Turn.Text), result.Bytes, int64(result.EventCount), int64(result.DeltaCount), "", result.Turn.Usage)
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	httputil.WriteJSON(w, http.StatusOK, openai.FromTurn(result.Turn, "", providerModel.PublicModel))
 }
@@ -258,7 +258,7 @@ func (s *Server) streamChat(
 	r *http.Request,
 	providerModel gateway.ProviderModel,
 	opts gateway.CompleteOptions,
-	finish func(bool, int, int64, int64, int64, string),
+	finish func(bool, int, int64, int64, int64, string, provider.Usage),
 ) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -364,11 +364,11 @@ func (s *Server) streamChat(
 		if openai.IsClientCanceled(err) {
 			// ZCode/browser often abort slow models (hy4-preview) and retry —
 			// that surfaces as context canceled, not an upstream outage.
-			finish(true, streamedChars, 0, 0, 0, "")
+			finish(true, streamedChars, 0, 0, 0, "", provider.Usage{})
 			writeLocked(func() { done = true })
 			return
 		}
-		finish(false, streamedChars, 0, 0, 0, err.Error())
+		finish(false, streamedChars, 0, 0, 0, err.Error(), provider.Usage{})
 		typ, code := openai.ClassifyUpstream(err)
 		writeLocked(func() {
 			if !started {
@@ -386,7 +386,7 @@ func (s *Server) streamChat(
 		})
 		return
 	}
-	finish(true, len(result.Turn.Text), result.Bytes, int64(result.EventCount), int64(result.DeltaCount), "")
+	finish(true, len(result.Turn.Text), result.Bytes, int64(result.EventCount), int64(result.DeltaCount), "", result.Turn.Usage)
 	writeLocked(func() {
 		startStream()
 		if streamedChars == 0 && result.Turn.Text != "" {
@@ -412,6 +412,8 @@ func (s *Server) streamChat(
 			finishReason = "tool_calls"
 		}
 		_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{}, &finishReason))
+		// OpenAI stream_options.include_usage style: trailing chunk with usage + empty choices.
+		_ = httputil.WriteSSE(w, openai.StreamUsageChunk(id, providerModel.PublicModel, openai.UsageFromProvider(result.Turn.Usage)))
 		httputil.WriteSSEDone(w)
 		done = true
 	})

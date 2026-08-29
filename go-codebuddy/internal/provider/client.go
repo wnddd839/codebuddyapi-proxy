@@ -110,10 +110,37 @@ type ToolUse struct {
 	Source string         `json:"source"`
 }
 
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens,omitempty"`
+}
+
+type CompletionTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens,omitempty"`
+}
+
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens             int                      `json:"prompt_tokens"`
+	CompletionTokens         int                      `json:"completion_tokens"`
+	TotalTokens              int                      `json:"total_tokens"`
+	PromptTokensDetails      *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails  *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+	CacheReadInputTokens     int                      `json:"cache_read_input_tokens,omitempty"`
+	CacheCreationInputTokens int                      `json:"cache_creation_input_tokens,omitempty"`
+	PromptCacheHitTokens     int                      `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens    int                      `json:"prompt_cache_miss_tokens,omitempty"`
+}
+
+func (u Usage) CachedTokens() int {
+	if u.PromptTokensDetails != nil && u.PromptTokensDetails.CachedTokens > 0 {
+		return u.PromptTokensDetails.CachedTokens
+	}
+	if u.CacheReadInputTokens > 0 {
+		return u.CacheReadInputTokens
+	}
+	if u.PromptCacheHitTokens > 0 {
+		return u.PromptCacheHitTokens
+	}
+	return 0
 }
 
 type Result struct {
@@ -766,15 +793,49 @@ func usageEventFromPayload(obj map[string]any) *Event {
 	if !ok || raw == nil {
 		return nil
 	}
-	usage := Usage{
-		PromptTokens:     intFrom(raw["prompt_tokens"]),
-		CompletionTokens: intFrom(raw["completion_tokens"]),
-		TotalTokens:      intFrom(raw["total_tokens"]),
-	}
-	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+	usage := ParseUsage(raw)
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 && usage.CachedTokens() == 0 {
 		return nil
 	}
 	return &Event{Type: "usage", Usage: &usage, Source: "codebuddy_openai"}
+}
+
+// ParseUsage extracts OpenAI / Anthropic / DeepSeek compatible token fields.
+func ParseUsage(raw map[string]any) Usage {
+	if raw == nil {
+		return Usage{}
+	}
+	usage := Usage{
+		PromptTokens:             intFrom(raw["prompt_tokens"], raw["input_tokens"]),
+		CompletionTokens:         intFrom(raw["completion_tokens"], raw["output_tokens"]),
+		TotalTokens:              intFrom(raw["total_tokens"]),
+		CacheReadInputTokens:     intFrom(raw["cache_read_input_tokens"]),
+		CacheCreationInputTokens: intFrom(raw["cache_creation_input_tokens"]),
+		PromptCacheHitTokens:     intFrom(raw["prompt_cache_hit_tokens"]),
+		PromptCacheMissTokens:    intFrom(raw["prompt_cache_miss_tokens"]),
+	}
+	if details, ok := raw["prompt_tokens_details"].(map[string]any); ok && details != nil {
+		cached := intFrom(details["cached_tokens"], details["cache_read_input_tokens"])
+		if cached > 0 {
+			usage.PromptTokensDetails = &PromptTokensDetails{CachedTokens: cached}
+		}
+	}
+	if details, ok := raw["completion_tokens_details"].(map[string]any); ok && details != nil {
+		reasoning := intFrom(details["reasoning_tokens"])
+		if reasoning > 0 {
+			usage.CompletionTokensDetails = &CompletionTokensDetails{ReasoningTokens: reasoning}
+		}
+	}
+	// Normalize aliases into OpenAI prompt_tokens_details.cached_tokens when only vendor fields exist.
+	if usage.PromptTokensDetails == nil {
+		if cached := usage.CachedTokens(); cached > 0 {
+			usage.PromptTokensDetails = &PromptTokensDetails{CachedTokens: cached}
+		}
+	}
+	if usage.TotalTokens == 0 && (usage.PromptTokens > 0 || usage.CompletionTokens > 0) {
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	}
+	return usage
 }
 
 func estimateUsage(prompt, output string) Usage {
@@ -1011,18 +1072,28 @@ func isErrorStatus(status string) bool {
 	return s == "error" || s == "failed" || s == "failure"
 }
 
-func intFrom(value any) int {
-	switch v := value.(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	case json.Number:
-		n, _ := v.Int64()
-		return int(n)
-	default:
-		return 0
+func intFrom(values ...any) int {
+	for _, value := range values {
+		switch v := value.(type) {
+		case int:
+			return v
+		case int64:
+			return int(v)
+		case float64:
+			return int(v)
+		case json.Number:
+			n, err := v.Int64()
+			if err == nil {
+				return int(n)
+			}
+		case string:
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err == nil {
+				return n
+			}
+		}
 	}
+	return 0
 }
 
 func truthy(value any) bool {

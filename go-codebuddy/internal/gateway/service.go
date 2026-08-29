@@ -24,21 +24,28 @@ import (
 const modelsCacheTTL = 60 * time.Second
 
 type Stats struct {
-	TotalRequests     int64  `json:"totalRequests"`
-	SuccessRequests   int64  `json:"successRequests"`
-	FailedRequests    int64  `json:"failedRequests"`
-	ActiveRequests    int64  `json:"activeRequests"`
-	TotalDurationMs   int64  `json:"totalDurationMs"`
-	LastRequestAt     int64  `json:"lastRequestAt"`
-	LastDurationMs    int64  `json:"lastDurationMs"`
-	LastModel         string `json:"lastModel"`
-	LastPromptChars   int64  `json:"lastPromptChars"`
-	LastOutputChars   int64  `json:"lastOutputChars"`
-	LastStream        bool   `json:"lastStream"`
-	LastError         string `json:"lastError"`
-	LastUpstreamBytes int64  `json:"lastUpstreamBytes"`
-	LastEventCount    int64  `json:"lastEventCount"`
-	LastDeltaCount    int64  `json:"lastDeltaCount"`
+	TotalRequests         int64  `json:"totalRequests"`
+	SuccessRequests       int64  `json:"successRequests"`
+	FailedRequests        int64  `json:"failedRequests"`
+	ActiveRequests        int64  `json:"activeRequests"`
+	TotalDurationMs       int64  `json:"totalDurationMs"`
+	TotalPromptTokens     int64  `json:"totalPromptTokens"`
+	TotalCompletionTokens int64  `json:"totalCompletionTokens"`
+	TotalTokens           int64  `json:"totalTokens"`
+	TotalCachedTokens     int64  `json:"totalCachedTokens"`
+	LastRequestAt         int64  `json:"lastRequestAt"`
+	LastDurationMs        int64  `json:"lastDurationMs"`
+	LastModel             string `json:"lastModel"`
+	LastPromptChars       int64  `json:"lastPromptChars"`
+	LastOutputChars       int64  `json:"lastOutputChars"`
+	LastPromptTokens      int64  `json:"lastPromptTokens"`
+	LastCompletionTokens  int64  `json:"lastCompletionTokens"`
+	LastCachedTokens      int64  `json:"lastCachedTokens"`
+	LastStream            bool   `json:"lastStream"`
+	LastError             string `json:"lastError"`
+	LastUpstreamBytes     int64  `json:"lastUpstreamBytes"`
+	LastEventCount        int64  `json:"lastEventCount"`
+	LastDeltaCount        int64  `json:"lastDeltaCount"`
 }
 
 type OAuthSession struct {
@@ -536,7 +543,7 @@ func (s *Service) Status() map[string]any {
 	}
 }
 
-func (s *Service) BeginRequest(model string, promptChars int, stream bool) func(ok bool, outputChars int, upstreamBytes, eventCount, deltaCount int64, errMsg string) {
+func (s *Service) BeginRequest(model string, promptChars int, stream bool) func(ok bool, outputChars int, upstreamBytes, eventCount, deltaCount int64, errMsg string, usage provider.Usage) {
 	started := time.Now()
 	s.mu.Lock()
 	s.stats.TotalRequests++
@@ -547,7 +554,7 @@ func (s *Service) BeginRequest(model string, promptChars int, stream bool) func(
 	s.stats.LastStream = stream
 	s.stats.LastError = ""
 	s.mu.Unlock()
-	return func(ok bool, outputChars int, upstreamBytes, eventCount, deltaCount int64, errMsg string) {
+	return func(ok bool, outputChars int, upstreamBytes, eventCount, deltaCount int64, errMsg string, usage provider.Usage) {
 		duration := time.Since(started).Milliseconds()
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -558,6 +565,19 @@ func (s *Service) BeginRequest(model string, promptChars int, stream bool) func(
 		s.stats.LastUpstreamBytes = upstreamBytes
 		s.stats.LastEventCount = eventCount
 		s.stats.LastDeltaCount = deltaCount
+		if usage.PromptTokens > 0 || usage.CompletionTokens > 0 || usage.TotalTokens > 0 || usage.CachedTokens() > 0 {
+			s.stats.LastPromptTokens = int64(usage.PromptTokens)
+			s.stats.LastCompletionTokens = int64(usage.CompletionTokens)
+			s.stats.LastCachedTokens = int64(usage.CachedTokens())
+			s.stats.TotalPromptTokens += int64(usage.PromptTokens)
+			s.stats.TotalCompletionTokens += int64(usage.CompletionTokens)
+			total := usage.TotalTokens
+			if total == 0 {
+				total = usage.PromptTokens + usage.CompletionTokens
+			}
+			s.stats.TotalTokens += int64(total)
+			s.stats.TotalCachedTokens += int64(usage.CachedTokens())
+		}
 		if ok {
 			s.stats.SuccessRequests++
 			s.stats.LastError = ""

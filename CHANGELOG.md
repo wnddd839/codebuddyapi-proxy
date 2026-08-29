@@ -8,6 +8,11 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### Token / cache usage 透传
+- 流式收尾补发 OpenAI `include_usage` 风格 usage chunk（此前 finish 后直接 DONE，CCSwitch 等拿不到 token）。
+- `usage` 保留 `prompt_tokens_details.cached_tokens`，并兼容 Anthropic/DeepSeek 缓存字段别名。
+- 网关 Stats 累计 `totalTokens` / `totalCachedTokens`，管理台新增「总 Tokens」指标。
+
 ### 账号池：内存权威 + 异步刷盘
 - `Select` / `MarkResult` 只改内存并标记 dirty，250ms 合并异步落盘（去掉每请求 4 次同步 IO）。
 - OAuth / Upsert / Delete / Replace / SetEnabled 仍同步刷盘（凭据不可丢）。
