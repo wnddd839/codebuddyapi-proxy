@@ -66,26 +66,20 @@ type ListOptions struct {
 func PublicModelID(upstreamID string) string {
 	cleaned := strings.TrimSpace(upstreamID)
 	lower := strings.ToLower(cleaned)
-	switch {
-	case cleaned == "" || lower == "default" || lower == "codebuddy" || lower == "codebuddy/" || lower == "codebuddy:":
+	if cleaned == "" || lower == "default" || lower == "codebuddy" || lower == "codebuddy/" || lower == "codebuddy:" {
 		return "auto"
-	case strings.HasPrefix(lower, "codebuddy/"):
-		rest := cleaned[len(cleaned)-len(lower)+len("codebuddy/"):]
-		rest = strings.TrimSpace(rest)
-		if rest == "" || strings.EqualFold(rest, "default") {
-			return "auto"
-		}
-		return rest
-	case strings.HasPrefix(lower, "codebuddy:"):
-		rest := cleaned[len(cleaned)-len(lower)+len("codebuddy:"):]
-		rest = strings.TrimSpace(rest)
-		if rest == "" || strings.EqualFold(rest, "default") {
-			return "auto"
-		}
-		return rest
-	default:
-		return cleaned
 	}
+	// Prefixes are ASCII, so len(prefix) aligns on the original-cased input.
+	for _, prefix := range []string{"codebuddy/", "codebuddy:"} {
+		if _, ok := strings.CutPrefix(lower, prefix); ok {
+			rest := strings.TrimSpace(cleaned[len(prefix):])
+			if rest == "" || strings.EqualFold(rest, "default") {
+				return "auto"
+			}
+			return rest
+		}
+	}
+	return cleaned
 }
 
 func ToAdminModels(rows []map[string]any, source string) []Model {

@@ -63,6 +63,8 @@ type ChatOptions struct {
 	Stream              bool
 	Tools               any
 	ToolChoice          any
+	Temperature         *float64
+	TopP                *float64
 	MaxCompletionTokens int
 	BearerToken         string
 	UserID              string
@@ -91,6 +93,7 @@ type Event struct {
 	StopReason     string
 	Message        string
 	Source         string
+	Usage          *Usage
 }
 
 type Turn struct {
@@ -428,6 +431,12 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 		"stream":   true,
 	}
 	body["stream_options"] = map[string]any{"include_usage": true}
+	if opts.Temperature != nil {
+		body["temperature"] = *opts.Temperature
+	}
+	if opts.TopP != nil {
+		body["top_p"] = *opts.TopP
+	}
 	if opts.MaxCompletionTokens > 0 {
 		body["max_completion_tokens"] = opts.MaxCompletionTokens
 	}
@@ -530,7 +539,7 @@ func (c *Client) readSSE(body io.Reader, opts ChatOptions) (Result, error) {
 		}
 	}
 	return Result{
-		Turn:       acc.snapshot(""),
+		Turn:       acc.snapshot(estimatePromptText(opts.Messages)),
 		Bytes:      bytesRead,
 		EventCount: eventCount,
 		DeltaCount: deltaCount,
@@ -551,6 +560,13 @@ func MapSSEEvent(payload any) []Event {
 			return []Event{{Type: "text_delta", Text: text, Source: "codebuddy_sse"}}
 		}
 		return nil
+	}
+	if usageEvent := usageEventFromPayload(obj); usageEvent != nil {
+		events := []Event{*usageEvent}
+		if _, hasChoices := obj["choices"]; hasChoices {
+			events = append(events, mapOpenAIDelta(obj)...)
+		}
+		return events
 	}
 	if _, hasChoices := obj["choices"]; hasChoices {
 		return mapOpenAIDelta(obj)
@@ -677,6 +693,8 @@ type accumulator struct {
 	fragments  map[int]*ToolUse
 	errors     []string
 	stopReason string
+	usage      Usage
+	hasUsage   bool
 }
 
 func newAccumulator() *accumulator {
@@ -725,6 +743,11 @@ func (a *accumulator) push(event Event) {
 		if event.StopReason != "" {
 			a.stopReason = event.StopReason
 		}
+	case "usage":
+		if event.Usage != nil {
+			a.usage = *event.Usage
+			a.hasUsage = true
+		}
 	}
 }
 
@@ -759,14 +782,51 @@ func (a *accumulator) snapshot(prompt string) Turn {
 			stop = "end_turn"
 		}
 	}
+	usage := estimateUsage(prompt, a.text)
+	if a.hasUsage {
+		usage = a.usage
+		if usage.TotalTokens == 0 {
+			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		}
+	}
 	return Turn{
 		Text:       a.text,
 		Thinking:   a.thinking,
 		ToolUses:   tools,
 		Errors:     append([]string{}, a.errors...),
 		StopReason: stop,
-		Usage:      estimateUsage(prompt, a.text),
+		Usage:      usage,
 	}
+}
+
+func estimatePromptText(messages []map[string]any) string {
+	var b strings.Builder
+	for _, message := range messages {
+		switch v := message["content"].(type) {
+		case string:
+			b.WriteString(v)
+		default:
+			raw, _ := json.Marshal(v)
+			b.Write(raw)
+		}
+	}
+	return b.String()
+}
+
+func usageEventFromPayload(obj map[string]any) *Event {
+	raw, ok := obj["usage"].(map[string]any)
+	if !ok || raw == nil {
+		return nil
+	}
+	usage := Usage{
+		PromptTokens:     intFrom(raw["prompt_tokens"]),
+		CompletionTokens: intFrom(raw["completion_tokens"]),
+		TotalTokens:      intFrom(raw["total_tokens"]),
+	}
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+		return nil
+	}
+	return &Event{Type: "usage", Usage: &usage, Source: "codebuddy_openai"}
 }
 
 func estimateUsage(prompt, output string) Usage {
