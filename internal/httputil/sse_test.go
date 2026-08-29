@@ -25,7 +25,7 @@ func (w *writeCounter) Flush() {
 	}
 }
 
-func TestSSEStreamWriteStreamChunkUsesHybridMarshal(t *testing.T) {
+func TestSSEStreamWriteStreamChunk(t *testing.T) {
 	rec := httptest.NewRecorder()
 	sse, ok := NewSSEStream(rec, 1024)
 	if !ok {

@@ -95,13 +95,7 @@ func (s *SSEStream) Flush() error {
 }
 
 func (s *SSEStream) WriteEvent(payload any) error {
-	var raw []byte
-	var err error
-	if marshaler, ok := payload.(SSEMarshaler); ok {
-		raw, err = marshaler.MarshalSSE()
-	} else {
-		raw, err = json.Marshal(payload)
-	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
