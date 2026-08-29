@@ -293,6 +293,7 @@ func (s *Server) streamChat(
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
 		_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Role: "assistant"}, nil))
+		_ = sse.Flush()
 	}
 
 	// 立即打开 SSE，避免客户端把上游建连延迟误判为挂起；

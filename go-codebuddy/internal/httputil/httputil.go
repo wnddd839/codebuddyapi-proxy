@@ -3,10 +3,10 @@ package httputil
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, payload any) {
@@ -28,12 +28,15 @@ func WriteHTML(w http.ResponseWriter, status int, body string) {
 	_, _ = io.WriteString(w, body)
 }
 
-// SSEStream 在 http.ResponseWriter 上套 16KB bufio，把一帧 SSE 的多次 Write 聚成一次 syscall，
-// 仍在每帧后 Flush，保证流式低延迟。
+// SSEStream 在 http.ResponseWriter 上套 bufio，把多帧 SSE 聚成更少 syscall。
+// 默认不在每帧后 Flush：缓冲满时自动落盘；超过 sseFlushMaxDelay 或显式 Flush / WriteDone / WriteComment 时再刷出。
 type SSEStream struct {
-	buf     *bufio.Writer
-	flusher http.Flusher
+	buf       *bufio.Writer
+	flusher   http.Flusher
+	lastFlush time.Time
 }
+
+const sseFlushMaxDelay = 5 * time.Millisecond
 
 // NewSSEStream 创建带缓冲的 SSE 写出器。size<=0 时默认 16KiB。
 func NewSSEStream(w http.ResponseWriter, size int) (*SSEStream, bool) {
@@ -44,7 +47,51 @@ func NewSSEStream(w http.ResponseWriter, size int) (*SSEStream, bool) {
 	if size <= 0 {
 		size = 16 << 10
 	}
-	return &SSEStream{buf: bufio.NewWriterSize(w, size), flusher: flusher}, true
+	return &SSEStream{buf: bufio.NewWriterSize(w, size), flusher: flusher, lastFlush: time.Now()}, true
+}
+
+func (s *SSEStream) writeDataFrame(raw []byte) error {
+	if _, err := s.buf.WriteString("data: "); err != nil {
+		return err
+	}
+	if _, err := s.buf.Write(raw); err != nil {
+		return err
+	}
+	_, err := s.buf.WriteString("\n\n")
+	return err
+}
+
+func (s *SSEStream) flush() error {
+	if s.buf.Buffered() == 0 {
+		return nil
+	}
+	if err := s.buf.Flush(); err != nil {
+		return err
+	}
+	s.flusher.Flush()
+	s.lastFlush = time.Now()
+	return nil
+}
+
+func (s *SSEStream) maybeFlush(force bool) error {
+	if force {
+		return s.flush()
+	}
+	if s.buf.Buffered() == 0 {
+		return nil
+	}
+	if s.buf.Available() < 512 {
+		return s.flush()
+	}
+	if time.Since(s.lastFlush) >= sseFlushMaxDelay {
+		return s.flush()
+	}
+	return nil
+}
+
+// Flush 把缓冲区内数据推到客户端（流式收尾、keep-alive 等场景调用）。
+func (s *SSEStream) Flush() error {
+	return s.flush()
 }
 
 func (s *SSEStream) WriteEvent(payload any) error {
@@ -52,38 +99,31 @@ func (s *SSEStream) WriteEvent(payload any) error {
 	if err != nil {
 		return err
 	}
-	frame := fmt.Appendf(nil, "data: %s\n\n", raw)
-	if _, err := s.buf.Write(frame); err != nil {
+	if err := s.writeDataFrame(raw); err != nil {
 		return err
 	}
-	if err := s.buf.Flush(); err != nil {
-		return err
-	}
-	s.flusher.Flush()
-	return nil
+	return s.maybeFlush(false)
 }
 
 func (s *SSEStream) WriteDone() error {
 	if _, err := s.buf.WriteString("data: [DONE]\n\n"); err != nil {
 		return err
 	}
-	if err := s.buf.Flush(); err != nil {
-		return err
-	}
-	s.flusher.Flush()
-	return nil
+	return s.flush()
 }
 
 func (s *SSEStream) WriteComment(comment string) error {
-	frame := fmt.Appendf(nil, ": %s\n\n", comment)
-	if _, err := s.buf.Write(frame); err != nil {
+	if _, err := s.buf.WriteString(": "); err != nil {
 		return err
 	}
-	if err := s.buf.Flush(); err != nil {
+	if _, err := s.buf.WriteString(comment); err != nil {
 		return err
 	}
-	s.flusher.Flush()
-	return nil
+	if _, err := s.buf.WriteString("\n\n"); err != nil {
+		return err
+	}
+	// keep-alive 注释必须及时到达客户端。
+	return s.maybeFlush(true)
 }
 
 // WriteSSE 无缓冲兼容路径（测试/简单 handler）；生产流式请用 SSEStream。
@@ -92,12 +132,19 @@ func WriteSSE(w http.ResponseWriter, payload any) error {
 	if err != nil {
 		return err
 	}
-	frame := fmt.Appendf(nil, "data: %s\n\n", raw)
-	_, err = w.Write(frame)
+	if _, err := io.WriteString(w, "data: "); err != nil {
+		return err
+	}
+	if _, err := w.Write(raw); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "\n\n"); err != nil {
+		return err
+	}
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
-	return err
+	return nil
 }
 
 func WriteSSEDone(w http.ResponseWriter) {
@@ -108,8 +155,7 @@ func WriteSSEDone(w http.ResponseWriter) {
 }
 
 func WriteSSEComment(w http.ResponseWriter, comment string) {
-	frame := fmt.Appendf(nil, ": %s\n\n", comment)
-	_, _ = w.Write(frame)
+	_, _ = io.WriteString(w, ": "+comment+"\n\n")
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}

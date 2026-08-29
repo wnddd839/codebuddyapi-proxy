@@ -6,6 +6,17 @@
 
 ---
 
+## v0.3.1 · 2026-08-29 · SSE 缓冲真正生效（热修复）
+
+- **修复**：`SSEStream` 不再每帧 `buf.Flush()`，改为缓冲满 / 5ms 防抖 / `WriteDone` / `WriteComment` 时再刷出。
+- **实测**：3000 帧突发写入 underlying writes **21 次**（≈ **0.007 次/帧**），达成 CHANGELOG 声称的 syscall 聚合目标。
+- ** framing**：SSE 组帧改为三次 `WriteString`，去掉 `fmt.Appendf` 热路径分配。
+- **首包**：流式 `startStream` 首帧后立即 `Flush()`，避免 TTFB 被缓冲拖慢。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.1
+
+---
+
 ## v0.3.0 · 2026-08-29 · 速度 / 体验 / 内存占用全面收口
 
 本版是 v0.2.0 之后的性能与体验大版本：账号池、流式写出、token 统计、管理台与工程卫生一起落地。  
