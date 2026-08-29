@@ -20,7 +20,8 @@
   <a href="https://wnddd839.github.io/proxy-codebuddy/">产品页</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#接入">接入 NewAPI</a> ·
-  <a href="https://github.com/wnddd839/proxy-codebuddy">GitHub</a>
+  <a href="https://github.com/wnddd839/proxy-codebuddy">GitHub</a> ·
+  <a href="CHANGELOG.md">更新日记</a>
 </p>
 
 ---

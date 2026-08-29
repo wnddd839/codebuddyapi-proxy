@@ -75,9 +75,8 @@ func Load() Config {
 		DefaultModels:       []string{"auto"},
 	}
 
-	if cfg.AdminPassword == "" {
-		cfg.AdminPassword = cfg.APIKey
-	}
+	// Empty admin password means open admin UI (local-friendly).
+	// API key gating stays independent via CODEBUDDY_PROXY_REQUIRE_API_KEY.
 	cfg.RequireAPIKey = envBool("CODEBUDDY_PROXY_REQUIRE_API_KEY", "CURSOR_DIRECT_REQUIRE_API_KEY", cfg.APIKey != "")
 	cfg.Site = NormalizeSite(cfg.Site)
 	cfg.BaseURL = envOr("CODEBUDDY_BASE_URL", "CURSOR_DIRECT_CODEBUDDY_BASE_URL", resolveDefaultBaseURL(cfg.Site, cfg.InternetEnvironment))
