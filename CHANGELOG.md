@@ -8,6 +8,11 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### 全局 panic 兜底 + 适度测试
+- HTTP 入口增加 `recoverHandler`，handler panic 记日志并返回 500，避免进程直接退出。
+- 流式 keep-alive goroutine 用 `safeCall` 包裹，防止后台 panic 拖垮进程。
+- 补充少量关键路径测试：panic 恢复、非法 JSON 400、无账号 502。
+
 ### 审计修复：正则预编译 + 重试深度上限
 - `ResolveProviderModel` / 鉴权与换号判断的正则改为包级预编译，消除热路径重复编译。
 - `CompleteFromPool` 增加 `RetryDepth` 上限（max=3），防止换号与 OAuth 刷新交织时递归放大。
