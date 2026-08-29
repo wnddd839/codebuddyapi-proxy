@@ -23,6 +23,8 @@ import (
 	"github.com/wnddd839/codebuddy-proxy/internal/strutil"
 )
 
+const modelsCacheTTL = 60 * time.Second
+
 type Stats struct {
 	TotalRequests     int64  `json:"totalRequests"`
 	SuccessRequests   int64  `json:"successRequests"`
@@ -71,6 +73,13 @@ type Service struct {
 	mu    sync.Mutex
 	stats Stats
 	oauth *OAuthSession
+
+	modelsCacheMu sync.Mutex
+	modelsCache   struct {
+		key       string
+		result    models.ListResult
+		expiresAt time.Time
+	}
 }
 
 func New(cfg config.Config, logger *slog.Logger) *Service {
@@ -149,16 +158,19 @@ func ResolveProviderModel(model string) ProviderModel {
 }
 
 type CompleteOptions struct {
-	AccountID    string
-	Model        string
-	Messages     []map[string]any
-	Stream       bool
-	Tools        any
-	ToolChoice   any
-	ExcludeIDs   []string
-	OnDelta      func(string)
-	OnEvent      func(provider.Event)
-	RefreshRetry bool
+	AccountID           string
+	Model               string
+	Messages            []map[string]any
+	Stream              bool
+	Tools               any
+	ToolChoice          any
+	Temperature         *float64
+	TopP                *float64
+	MaxCompletionTokens int
+	ExcludeIDs          []string
+	OnDelta             func(string)
+	OnEvent             func(provider.Event)
+	RefreshRetry        bool
 }
 
 // chatOptionsFromAccount builds upstream options using the account as the
@@ -181,6 +193,9 @@ func (s *Service) chatOptionsFromAccount(account accounts.Account, opts Complete
 		Stream:              opts.Stream,
 		Tools:               opts.Tools,
 		ToolChoice:          opts.ToolChoice,
+		Temperature:         opts.Temperature,
+		TopP:                opts.TopP,
+		MaxCompletionTokens: opts.MaxCompletionTokens,
 		BearerToken:         account.BearerToken,
 		UserID:              account.AuthStatus.UserID,
 		BaseURL:             baseURL,
@@ -361,7 +376,6 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 			break
 		}
 	}
-	_ = fresh
 	site := config.NormalizeSite(strutil.First(account.Site, s.Config().Site))
 	internet := strutil.First(account.InternetEnvironment, s.Config().InternetEnvironment)
 	baseURL := strings.TrimSpace(account.BaseURL)
@@ -372,7 +386,17 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 			baseURL = "https://www.codebuddy.ai"
 		}
 	}
-	return s.Models.List(ctx, s.Provider, models.ListOptions{
+	cacheKey := strings.Join([]string{activeSite, account.ID, site, baseURL, internet}, "|")
+	if !fresh {
+		s.modelsCacheMu.Lock()
+		hit := s.modelsCache.key == cacheKey && time.Now().Before(s.modelsCache.expiresAt)
+		cached := s.modelsCache.result
+		s.modelsCacheMu.Unlock()
+		if hit && len(cached.Models) > 0 {
+			return cached, nil
+		}
+	}
+	listed := s.Models.List(ctx, s.Provider, models.ListOptions{
 		Site:                site,
 		BaseURL:             baseURL,
 		InternetEnvironment: internet,
@@ -383,7 +407,23 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 		DepartmentFullName:  account.DepartmentFullName,
 		APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
 		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Config().ChatCompletionsPath),
-	}), nil
+	})
+	if listed.OK && len(listed.Models) > 0 {
+		s.modelsCacheMu.Lock()
+		s.modelsCache.key = cacheKey
+		s.modelsCache.result = listed
+		s.modelsCache.expiresAt = time.Now().Add(modelsCacheTTL)
+		s.modelsCacheMu.Unlock()
+	}
+	return listed, nil
+}
+
+func (s *Service) invalidateModelsCache() {
+	s.modelsCacheMu.Lock()
+	s.modelsCache.key = ""
+	s.modelsCache.result = models.ListResult{}
+	s.modelsCache.expiresAt = time.Time{}
+	s.modelsCacheMu.Unlock()
 }
 
 func (s *Service) ConfiguredModels() []models.Model {
@@ -425,6 +465,7 @@ func (s *Service) SetPoolSite(site string) (map[string]any, error) {
 		c.BaseURL = baseURL
 		c.InternetEnvironment = internet
 	})
+	s.invalidateModelsCache()
 	_ = os.Setenv("CODEBUDDY_SITE", site)
 	_ = os.Setenv("CODEBUDDY_BASE_URL", baseURL)
 	_ = os.Setenv("CODEBUDDY_INTERNET_ENVIRONMENT", internet)

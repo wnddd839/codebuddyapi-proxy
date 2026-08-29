@@ -12,9 +12,6 @@ func PageHTML() string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>CodeBuddy Proxy · Console</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
 :root{
   --sand:#F4EEE4;
@@ -37,7 +34,7 @@ func PageHTML() string {
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
 body{
-  font-family:"Outfit",system-ui,sans-serif;
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
   color:var(--ink);
   background:
     radial-gradient(900px 520px at 8% -8%, rgba(15,124,116,.18), transparent 55%),
@@ -113,7 +110,7 @@ h1{
   border:1px solid var(--line);
 }
 .metric .k{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
-.metric .v{margin-top:6px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:22px;letter-spacing:-.03em;font-weight:500}
+.metric .v{margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:22px;letter-spacing:-.03em;font-weight:500}
 .metric .v.sm{font-size:14px;line-height:1.35}
 .section-head{
   display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;
@@ -186,7 +183,7 @@ select:focus,input:focus{border-color:rgba(15,124,116,.45);box-shadow:0 0 0 4px 
 .badge.off{color:var(--bad);background:rgba(201,68,68,.08);border-color:rgba(201,68,68,.16)}
 .meta{color:var(--muted);font-size:13px;line-height:1.5}
 .meta code, .mono{
-  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;
 }
 .err{margin-top:2px;color:var(--bad);font-size:12.5px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -207,13 +204,13 @@ details.raw summary{
 details.raw summary::-webkit-details-marker{display:none}
 pre{
   margin:0;padding:0 14px 14px;white-space:pre-wrap;word-break:break-word;
-  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;line-height:1.5;color:#334155;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.5;color:#334155;
   max-height:280px;overflow:auto;
 }
 .footer-note{margin-top:22px;color:var(--muted);font-size:12px;text-align:center}
 
 .copyline{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
-.copyline input{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px}
+.copyline input{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
 .secret-hint{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.45}
 .toast{
   position:fixed;right:18px;bottom:18px;z-index:40;min-width:180px;max-width:min(420px,92vw);
@@ -703,7 +700,7 @@ async function refreshStatus(){
 }
 
 async function refreshModels(){
-  const data = await api('/direct-admin/api/codebuddy/models');
+  const data = await api('/direct-admin/api/codebuddy/models?fresh=1');
   const raw = JSON.stringify(data, null, 2);
   $('modelsBox').textContent = raw;
   $('modelsRaw').textContent = raw;
@@ -807,15 +804,12 @@ func LaunchPage(message string, success bool) string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>CodeBuddy OAuth</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700&display=swap" rel="stylesheet"/>
 <style>
 :root{--sand:#F4EEE4;--paper:#FFFCF7;--ink:#1B2430;--muted:#667384;--teal:#0F7C74;--coral:#E86F3A;--ok:#1F8A5B;--bad:#C94444}
 *{box-sizing:border-box}
 body{
   margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;
-  font-family:"Outfit",system-ui,sans-serif;color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);
   background:
     radial-gradient(700px 420px at 12% 0%, rgba(15,124,116,.18), transparent 55%),
     radial-gradient(640px 380px at 100% 10%, rgba(232,111,58,.16), transparent 50%),
