@@ -8,6 +8,13 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### 账号池：内存权威 + 异步刷盘
+- `Select` / `MarkResult` 只改内存并标记 dirty，250ms 合并异步落盘（去掉每请求 4 次同步 IO）。
+- OAuth / Upsert / Delete / Replace / SetEnabled 仍同步刷盘（凭据不可丢）。
+- `json.MarshalIndent` → `json.Marshal`；`MkdirAll` 仅首次。
+- `Pool.Close` / `Service.Close` / `Server.Shutdown` 强制 flush。
+- 并发 Select+Mark 实测从 ~38 ops/s 提升到数十万 ops/s。
+
 ### 工程卫生：鉴权 / CI / gofmt
 - 删除管理台 `?password=` URL query 认证路径（防日志 / 历史 / Referer 泄露）。
 - 管理台 / API Key 比对改为 `crypto/subtle.ConstantTimeCompare`。
