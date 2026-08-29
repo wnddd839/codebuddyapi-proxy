@@ -445,10 +445,6 @@ func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path str
 			"CODEBUDDY_PROXY_API_KEY":         key,
 			"CODEBUDDY_PROXY_REQUIRE_API_KEY": "true",
 		}
-		if strings.TrimSpace(s.Cfg.AdminPassword) == "" {
-			values["CODEBUDDY_PROXY_ADMIN_PASSWORD"] = key
-			s.Cfg.AdminPassword = key
-		}
 		if err := config.UpsertEnvFile(envPath, values); err != nil {
 			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
 				"ok":    false,
