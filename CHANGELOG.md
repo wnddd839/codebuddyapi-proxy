@@ -2,6 +2,14 @@
 
 ## 2026-08-29
 
+### 模型列表 / 采样 / 用量 / 管理台硬化
+- `/v1/models` 默认走 60s TTL 缓存；`?fresh=1` 或管理台刷新强制回源。
+- `PublicModelID` 改用 `strings.CutPrefix`（保留原大小写后缀）。
+- chat 透传 `temperature` / `top_p` / `max_tokens` / `max_completion_tokens`。
+- `prompt_tokens` 按真实 prompt 估算；若上游 SSE `usage` 存在则优先采用。
+- 管理台去掉 Google Fonts，改系统字体栈。
+- 管理台写操作增加 Origin/Referer 同源校验（无头 curl 不受影响）。
+
 ### 运行时配置并发安全
 - `gateway.Service` 用 `atomic.Pointer[config.Config]` 保存运行时配置（go-modern `atomic_types`）。
 - 管理台改 API Key / 号池站点只更新这一份快照；`Server` 不再持有可写 `Cfg` 副本。

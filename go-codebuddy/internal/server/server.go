@@ -157,7 +157,8 @@ func (s *Server) authorizeAdmin(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	listed, err := s.Svc.ListModels(r.Context(), true)
+	fresh := queryTruthy(r.URL.Query().Get("fresh"))
+	listed, err := s.Svc.ListModels(r.Context(), fresh)
 	models := listed.Models
 	if err != nil || len(models) == 0 {
 		models = s.Svc.ConfiguredModels()
@@ -190,11 +191,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Model      string           `json:"model"`
-		Messages   []map[string]any `json:"messages"`
-		Stream     bool             `json:"stream"`
-		Tools      any              `json:"tools"`
-		ToolChoice any              `json:"tool_choice"`
+		Model               string           `json:"model"`
+		Messages            []map[string]any `json:"messages"`
+		Stream              bool             `json:"stream"`
+		Tools               any              `json:"tools"`
+		ToolChoice          any              `json:"tool_choice"`
+		Temperature         *float64         `json:"temperature"`
+		TopP                *float64         `json:"top_p"`
+		MaxTokens           *int             `json:"max_tokens"`
+		MaxCompletionTokens *int             `json:"max_completion_tokens"`
 	}
 	if err := httputil.ReadJSON(r, &body); err != nil {
 		httputil.WriteJSON(w, http.StatusBadRequest, openai.NewError("Invalid JSON body", "invalid_request_error"))
@@ -203,19 +208,29 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	providerModel := gateway.ResolveProviderModel(body.Model)
 	promptChars := estimatePromptChars(body.Messages)
 	finish := s.Svc.BeginRequest(providerModel.PublicModel, promptChars, body.Stream)
+	maxTokens := 0
+	if body.MaxCompletionTokens != nil && *body.MaxCompletionTokens > 0 {
+		maxTokens = *body.MaxCompletionTokens
+	} else if body.MaxTokens != nil && *body.MaxTokens > 0 {
+		maxTokens = *body.MaxTokens
+	}
+	completeOpts := gateway.CompleteOptions{
+		Model:               providerModel.Model,
+		Messages:            body.Messages,
+		Tools:               body.Tools,
+		ToolChoice:          body.ToolChoice,
+		Temperature:         body.Temperature,
+		TopP:                body.TopP,
+		MaxCompletionTokens: maxTokens,
+	}
 
 	if body.Stream {
-		s.streamChat(w, r, body.Messages, providerModel, body.Tools, body.ToolChoice, finish)
+		s.streamChat(w, r, providerModel, completeOpts, finish)
 		return
 	}
 
-	result, err := s.Svc.CompleteFromPool(r.Context(), gateway.CompleteOptions{
-		Model:      providerModel.Model,
-		Messages:   body.Messages,
-		Stream:     false,
-		Tools:      body.Tools,
-		ToolChoice: body.ToolChoice,
-	})
+	completeOpts.Stream = false
+	result, err := s.Svc.CompleteFromPool(r.Context(), completeOpts)
 	if err != nil {
 		if openai.IsClientCanceled(err) {
 			// Client aborted before/during non-stream aggregation — not a gateway fault.
@@ -235,10 +250,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) streamChat(
 	w http.ResponseWriter,
 	r *http.Request,
-	messages []map[string]any,
 	providerModel gateway.ProviderModel,
-	tools any,
-	toolChoice any,
+	opts gateway.CompleteOptions,
 	finish func(bool, int, int64, int64, int64, string),
 ) {
 	flusher, ok := w.(http.Flusher)
@@ -309,43 +322,38 @@ func (s *Server) streamChat(
 	}()
 	defer close(keepAliveStop)
 
-	result, err := s.Svc.CompleteFromPool(ctx, gateway.CompleteOptions{
-		Model:      providerModel.Model,
-		Messages:   messages,
-		Stream:     true,
-		Tools:      tools,
-		ToolChoice: toolChoice,
-		OnEvent: func(event provider.Event) {
-			if event.Type != "tool_use" {
-				return
-			}
-			writeLocked(func() {
-				startStream()
-				streamedToolCalls++
-				_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
-					ToolCalls: []openai.ToolCall{{
-						Index: streamedToolCalls - 1,
-						ID:    strutil.First(event.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
-						Type:  "function",
-						Function: openai.ToolFunction{
-							Name:      strutil.First(event.Name, "tool"),
-							Arguments: mustJSON(event.Input),
-						},
-					}},
-				}, nil))
-			})
-		},
-		OnDelta: func(delta string) {
-			if delta == "" {
-				return
-			}
-			writeLocked(func() {
-				startStream()
-				streamedChars += len(delta)
-				_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: delta}, nil))
-			})
-		},
-	})
+	opts.Stream = true
+	opts.OnEvent = func(event provider.Event) {
+		if event.Type != "tool_use" {
+			return
+		}
+		writeLocked(func() {
+			startStream()
+			streamedToolCalls++
+			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{
+				ToolCalls: []openai.ToolCall{{
+					Index: streamedToolCalls - 1,
+					ID:    strutil.First(event.ID, fmt.Sprintf("call_%d", time.Now().UnixNano())),
+					Type:  "function",
+					Function: openai.ToolFunction{
+						Name:      strutil.First(event.Name, "tool"),
+						Arguments: mustJSON(event.Input),
+					},
+				}},
+			}, nil))
+		})
+	}
+	opts.OnDelta = func(delta string) {
+		if delta == "" {
+			return
+		}
+		writeLocked(func() {
+			startStream()
+			streamedChars += len(delta)
+			_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: delta}, nil))
+		})
+	}
+	result, err := s.Svc.CompleteFromPool(ctx, opts)
 	if err != nil {
 		if openai.IsClientCanceled(err) {
 			// ZCode/browser often abort slow models (hy4-preview) and retry —
@@ -405,6 +413,10 @@ func (s *Server) streamChat(
 
 func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path string) {
 	if !s.authorizeAdmin(w, r) {
+		return
+	}
+	if !httputil.AdminMutationAllowed(r) {
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "cross-origin admin mutation blocked"})
 		return
 	}
 	publicOrigin := httputil.PublicOrigin(r, s.Svc.Config().PublicBaseURL)
@@ -502,7 +514,11 @@ func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path str
 		httputil.WriteJSON(w, http.StatusOK, accounts.SummarizeStore(store, s.Svc.Pool.Path()))
 		return
 	case path == "/direct-admin/api/codebuddy/models" && r.Method == http.MethodGet:
-		listed, err := s.Svc.ListModels(r.Context(), true)
+		fresh := true
+		if q := r.URL.Query().Get("fresh"); q != "" {
+			fresh = queryTruthy(q)
+		}
+		listed, err := s.Svc.ListModels(r.Context(), fresh)
 		if err != nil {
 			httputil.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
 			return
@@ -779,4 +795,13 @@ func mustJSON(value map[string]any) string {
 		return "{}"
 	}
 	return string(raw)
+}
+
+func queryTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
