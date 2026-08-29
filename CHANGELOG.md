@@ -6,6 +6,28 @@
 
 ---
 
+## v0.3.2 · 2026-08-29 · 出站 SSE 手工序列化 + 产品页氛围层
+
+本版继续打磨流式热路径与前端观感，二进制体积与内存占用基本不变。
+
+### 性能
+- **出站 SSE chunk 混合序列化**：`openai.MarshalStreamChunk` 对 content / role / usage / finish 等常见帧走固定 JSON 骨架，tool_calls 等复杂帧回退 `json.Marshal`；与 `json.Marshal` 输出逐字节对齐（parity tests）。
+- **`httputil.SSEMarshaler`**：`StreamChunk` 实现自定义序列化接口，`WriteEvent` 热路径跳过反射。
+- 基准守护：`stream_marshal_test.go` / `sse_test.go` 覆盖 parity 与 bench。
+
+### 体验 / 前端
+- **产品页氛围层**：原生 Canvas 粒子（无第三方库），`prefers-reduced-motion` 降级；玻璃卡片 hero panel。
+- **管理台 UI**：同步 ambient 设计 token（网格底纹、径向高光、`color-mix` 面板）。
+- **设计文档**：新增 `design/04-product-ambient.md`，明确「不搬库、不增二进制」原则。
+
+### 运维
+- **GitHub Pages**：改走 `gh-pages` 分支部署，避免并发 push 卡死 `actions/deploy-pages`。
+- **CI**：`pages.yml` 串行化 docs 发布。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.2
+
+---
+
 ## v0.3.1 · 2026-08-29 · SSE 缓冲真正生效（热修复）
 
 - **修复**：`SSEStream` 不再每帧 `buf.Flush()`，改为缓冲满 / 5ms 防抖 / `WriteDone` / `WriteComment` 时再刷出。
