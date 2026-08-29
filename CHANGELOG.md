@@ -6,6 +6,16 @@
 
 ---
 
+## v0.3.3 · 2026-08-29 · 回滚出站混合序列化（热修复）
+
+- **回滚**：删除 `MarshalStreamChunk` / `SSEMarshaler` 手写骨架路径，出站 `StreamChunk` 恢复 `json.Marshal`。
+- **原因**：typed struct 的 `json.Marshal` 已是 **2 allocs / ~288B**；混合路径 **9 allocs / ~552B**，实测为负优化（上轮基线误用 `map[string]any`）。
+- **保留**：v0.3.1 SSE 缓冲聚合、v0.3.0 上游 typed 解析、中文 token 估算等有效优化不受影响。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.3
+
+---
+
 ## v0.3.2 · 2026-08-29 · 出站 SSE 手工序列化 + 产品页氛围层
 
 本版继续打磨流式热路径与前端观感，二进制体积与内存占用基本不变。
