@@ -166,7 +166,7 @@ func IsDomestic(site, internetEnvironment, baseURL string) bool {
 
 // RegionOf 返回 protocol_direct 路由用的 "domestic" 或 "global"。
 // 账号 site / internetEnvironment 优先于反代进程所在主机
-//（海外 VPS/VPN 不得把国内账号打到海外）。
+// （海外 VPS/VPN 不得把国内账号打到海外）。
 func RegionOf(opts ChatOptions) string {
 	if IsDomestic(opts.Site, opts.InternetEnvironment, "") {
 		return "domestic"

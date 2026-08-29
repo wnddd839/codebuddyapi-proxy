@@ -8,6 +8,10 @@
   <meta property="og:title" content="CodeBuddy Proxy" />
   <meta property="og:description" content="把 CodeBuddy 变成 OpenAI 兼容的 /v1 渠道。只做 CodeBuddy，不做多厂商聚合。" />
   <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://wnddd839.github.io/codebuddyapi-proxy/" />
+  <meta property="og:image" content="https://wnddd839.github.io/codebuddyapi-proxy/logo.svg" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://wnddd839.github.io/codebuddyapi-proxy/" />
   <link rel="icon" href="./logo.svg" type="image/svg+xml" />
   <style>
     :root {
@@ -35,11 +39,18 @@
     .wrap { width: min(100% - 2rem, var(--max)); margin-inline: auto; }
 
     .nav {
-      position: absolute;
-      inset: 0 0 auto;
-      z-index: 5;
+      position: sticky;
+      top: 0;
+      z-index: 20;
       padding: 1.25rem 0;
+      /* fallback first, then progressive enhancement */
+      background: rgba(14, 17, 16, .82);
+      background: color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid transparent;
+      transition: border-color .25s ease;
     }
+    .nav.is-stuck { border-bottom-color: var(--line); }
     .nav-inner {
       display: flex;
       align-items: center;
@@ -77,7 +88,7 @@
       min-height: auto;
       display: grid;
       align-items: end;
-      padding: 6rem 0 3rem;
+      padding: 4.5rem 0 3.25rem;
       isolation: isolate;
       overflow: hidden;
     }
@@ -164,11 +175,12 @@
     }
     .kicker {
       font-size: .72rem;
-      font-weight: 500;
+      font-weight: 400;
       letter-spacing: .14em;
       text-transform: uppercase;
       color: var(--teal);
       margin-bottom: .75rem;
+      opacity: .85;
     }
     .title {
       font-family: var(--display);
@@ -188,20 +200,32 @@
     .rails { display: grid; gap: 0; border-top: 1px solid var(--line); }
     .rail {
       display: grid;
-      grid-template-columns: 3.5rem 1fr;
-      gap: 1rem;
+      grid-template-columns: 1fr;
+      gap: .45rem;
       padding: 1.35rem 0;
       border-bottom: 1px solid var(--line);
+      transition: background .25s ease;
     }
-    .rail b {
-      font-family: var(--sans);
-      font-size: .75rem;
-      color: var(--muted);
+    .rail:hover { background: rgba(255,255,255,.015); }
+    .rail h3 {
+      font-size: 1.05rem;
       font-weight: 600;
-      letter-spacing: .08em;
-      padding-top: .35rem;
+      margin-bottom: .3rem;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: baseline;
+      gap: .6rem;
     }
-    .rail h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: .3rem; letter-spacing: -0.01em; }
+    /* thin teal tick replaces the numbered column (was an AI-layout default) */
+    .rail h3::before {
+      content: "";
+      flex: none;
+      width: 14px;
+      height: 2px;
+      background: var(--teal);
+      transform: translateY(-4px);
+      opacity: .7;
+    }
     .rail p { color: var(--muted); font-size: .95rem; max-width: 38rem; }
 
     .split {
@@ -255,6 +279,47 @@
     }
     .note strong { color: var(--ink); font-weight: 600; }
 
+    .notice-section { border-top: 1px solid var(--line); }
+    .notice-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .notice-card {
+      background: var(--bg);
+      padding: 1.5rem 1.4rem;
+    }
+    .notice-card h3 {
+      font-size: .95rem;
+      font-weight: 600;
+      margin-bottom: .6rem;
+      letter-spacing: -0.01em;
+    }
+    .notice-card p {
+      color: var(--muted);
+      font-size: .92rem;
+      line-height: 1.65;
+    }
+    .notice-card strong { color: var(--ink); font-weight: 600; }
+    .notice-foot {
+      margin-top: 1.5rem;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+    .notice-foot a {
+      color: var(--teal);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .notice-foot a:hover { color: var(--ink); }
+    @media (max-width: 840px) {
+      .notice-grid { grid-template-columns: 1fr; }
+    }
+
     .cta {
       background:
         radial-gradient(ellipse 50% 80% at 100% 0%, rgba(232,138,74,.16), transparent 55%),
@@ -290,6 +355,7 @@
         <a href="#why">能力</a>
         <a href="#download">下载</a>
         <a href="#start">开始</a>
+        <a href="#notice">声明</a>
         <a class="pill" href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">GitHub</a>
       </nav>
     </div>
@@ -301,7 +367,8 @@
       <div class="wrap">
         <h1>CodeBuddy <span>Proxy</span></h1>
         <p class="hero-lead">
-          Go 原生实现。OAuth 登录后协议直连，对外给出标准 OpenAI 兼容 <code>/v1</code>，可直接接 NewAPI。无需安装 Go，下载二进制即可运行。
+          把你的 CodeBuddy 账号，变成任何 OpenAI 客户端都能直连的 <code>/v1</code> 渠道。
+          Go 单文件二进制，OAuth 登录后协议直连，不需要 <code>codebuddy --serve</code>。
         </p>
         <div class="hero-actions">
           <a class="btn btn-solid" href="#download">下载运行</a>
@@ -314,35 +381,43 @@
       <div class="wrap">
         <p class="kicker">Only CodeBuddy</p>
         <h2 class="title">一件事做到位</h2>
-        <p class="desc">不是多厂商聚合，也不是 Cursor 网关。这个项目只服务 CodeBuddy 账号 → OpenAI 兼容接口。</p>
+        <p class="desc">不是多厂商聚合，也不是 Cursor 网关。这个项目只做一件事：CodeBuddy 账号 → OpenAI 兼容接口。</p>
 
         <div class="rails">
           <article class="rail">
-            <b>01</b>
             <div>
               <h3>协议直连</h3>
-              <p>默认 protocol_direct。OAuth 后直连上游，模型列表走 /v3/config，不必再挂 CLI serve。</p>
+              <p>默认 <code>protocol_direct</code>。OAuth 后直连上游，不必再挂 CLI serve，也不依赖任何浏览器插件。</p>
             </div>
           </article>
           <article class="rail">
-            <b>02</b>
+            <div>
+              <h3>标准 OpenAI 形状</h3>
+              <p><code>GET /v1/models</code> · <code>POST /v1/chat/completions</code>，流式与非流式都支持。NewAPI、ZCode、Sub2API 按熟悉方式接入。</p>
+            </div>
+          </article>
+          <article class="rail">
+            <div>
+              <h3>多账号轮询</h3>
+              <p>账号池按区域分组，失败自动换号。凭据以 <code>0600</code> 权限原子落盘，刷新失败不会清空账号列表。</p>
+            </div>
+          </article>
+          <article class="rail">
             <div>
               <h3>真实 Credits</h3>
-              <p>管理台读官网用量接口，展示剩余 / 总额。一眼知道账号还剩多少。</p>
+              <p>管理台直读官网用量接口，展示「剩余 / 总额」。一眼知道账号还剩多少，不是假状态。</p>
             </div>
           </article>
           <article class="rail">
-            <b>03</b>
             <div>
-              <h3>账号池 + 管理台</h3>
-              <p>多账号轮询、启用禁用、刷新 token。写盘有保护，刷新失败不会把账号列表清空。</p>
+              <h3>国内 / 国际一键切换</h3>
+              <p>端点以<strong>账号自身区域</strong>为准，不看反代机器 IP。国内号不会误打到海外，反之亦然。</p>
             </div>
           </article>
           <article class="rail">
-            <b>04</b>
             <div>
-              <h3>OpenAI 形状</h3>
-              <p>GET /v1/models、POST /v1/chat/completions。NewAPI、自建客户端，按熟悉方式接入。</p>
+              <h3>Token 用量透传</h3>
+              <p>流式收尾补发 usage chunk，含缓存命中统计，缓存字段兼容多上游别名——客户端能拿到真实消耗。</p>
             </div>
           </article>
         </div>
@@ -352,8 +427,11 @@
     <section id="download">
       <div class="wrap">
         <p class="kicker">Download</p>
-        <h2 class="title">预编译二进制</h2>
-        <p class="desc">下载对应平台文件，同目录复制 <code>.env.example</code> 为 <code>.env</code> 并填写密码与 API Key。</p>
+        <h2 class="title">下载即用，无需安装</h2>
+        <p class="desc">
+          下载对应平台文件，直接运行即可。<strong>首次启动会自动生成 API Key</strong> 并写入同目录 <code>.env</code>——
+          你不需要手动配置任何东西。
+        </p>
         <table class="dl-table">
           <thead>
             <tr><th>平台</th><th>文件</th></tr>
@@ -378,7 +456,7 @@
           </tbody>
         </table>
         <p class="desc" style="margin-top:1.5rem;margin-bottom:0;font-size:.9rem;">
-          配置模板：<a href="https://github.com/wnddd839/codebuddyapi-proxy/raw/main/go-codebuddy/releases/.env.example" style="color:var(--teal);text-decoration:underline;">.env.example</a>
+          可选配置模板：<a href="https://github.com/wnddd839/codebuddyapi-proxy/raw/main/go-codebuddy/releases/.env.example" style="color:var(--teal);text-decoration:underline;">.env.example</a>
           · 校验 <a href="https://github.com/wnddd839/codebuddyapi-proxy/releases/latest/download/SHA256SUMS.txt" style="color:var(--teal);text-decoration:underline;">SHA256SUMS.txt</a>
         </p>
       </div>
@@ -389,22 +467,46 @@
         <div>
           <p class="kicker">Get started</p>
           <h2 class="title">三步跑起来</h2>
-          <p class="desc">下载 exe（或对应平台二进制）、写 <code>.env</code>、运行。默认国内站 codebuddy.cn。也可从源码 <code>go run</code>。</p>
+          <p class="desc">下载、运行、OAuth 登录三步即可。默认国内站，管理台可一键切换国际站；也可从源码 <code>go run</code>。</p>
           <div class="note">
             <strong>范围说明：</strong>本项目只做 CodeBuddy 反代，不做 Cursor、也不做多厂商聚合。
           </div>
         </div>
-        <pre class="panel" aria-label="启动命令"><code><span class="dim"># Windows 示例</span>
-copy .env.example .env
+        <pre class="panel" aria-label="启动命令"><code><span class="dim"># Windows 示例 —— 直接运行，首次启动自动生成 API Key</span>
 .\codebuddy-proxy-windows-amd64.exe
 
 <span class="dim"># 或从源码</span>
-cd go-codebuddy &amp;&amp; cp .env.example .env
-go run ./cmd/codebuddy-proxy
+cd go-codebuddy &amp;&amp; go run ./cmd/codebuddy-proxy
 
 <span class="dim"># endpoints</span>
 API    <span class="hot">http://127.0.0.1:32126/v1</span>
 Admin  <span class="hot">http://127.0.0.1:32126/direct-admin/</span></code></pre>
+      </div>
+    </section>
+
+    <section id="notice" class="notice-section">
+      <div class="wrap">
+        <p class="kicker">Notice</p>
+        <h2 class="title">使用前请读完这一节</h2>
+        <p class="desc">开源分享，不含担保。它是你自己的工具，责任边界也在你这边。</p>
+        <div class="notice-grid">
+          <div class="notice-card">
+            <h3>它是什么</h3>
+            <p>一个自行托管、本地运行的协议转换工具。不提供模型服务，不代理第三方 API，不托管任何账号——<strong>你的请求只从你自己的机器发往 CodeBuddy 上游</strong>。</p>
+          </div>
+          <div class="notice-card">
+            <h3>你的责任</h3>
+            <p>请仅对拥有合法授权、且符合其服务条款的账号使用。账号是否允许此类接入，由你与该服务的协议决定——我们无法代你判断，也<strong>不为账号被限制或封禁负责</strong>。</p>
+          </div>
+          <div class="notice-card">
+            <h3>我们不提供</h3>
+            <p>不提供账号或额度，不提供托管服务，没有公共实例，不接收你的流量。软件按「原样」提供，不保证与上游持续兼容。</p>
+          </div>
+        </div>
+        <p class="notice-foot">
+          完整免责声明、安全使用建议与商标说明见
+          <a href="https://github.com/wnddd839/codebuddyapi-proxy#%E5%85%8D%E8%B4%A3%E5%A3%B0%E6%98%8E%E4%B8%8E%E5%90%88%E8%A7%84" target="_blank" rel="noopener">README · 免责声明与合规</a>。
+        </p>
       </div>
     </section>
 
@@ -423,7 +525,7 @@ Admin  <span class="hot">http://127.0.0.1:32126/direct-admin/</span></code></pre
 
   <footer>
     <div class="wrap foot">
-      <p>CodeBuddy Proxy · Go · BSD-3-Clause · 仅限授权与合规使用</p>
+      <p>CodeBuddy Proxy · Go · BSD-3-Clause · 仅限授权与合规使用<br />与 CodeBuddy 官方无关联、无隶属、无背书关系</p>
       <p>
         <a href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">仓库</a>
         ·
@@ -431,5 +533,17 @@ Admin  <span class="hot">http://127.0.0.1:32126/direct-admin/</span></code></pre
       </p>
     </div>
   </footer>
+  <script>
+    // Sticky nav: only add the hairline border once the page has scrolled.
+    (function () {
+      var nav = document.querySelector('.nav');
+      if (!nav) return;
+      var onScroll = function () {
+        nav.classList.toggle('is-stuck', window.scrollY > 8);
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+    })();
+  </script>
 </body>
 </html>
