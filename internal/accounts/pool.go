@@ -590,54 +590,96 @@ func SummarizeAccount(account Account) Summary {
 }
 
 type StoreSummary struct {
-	OK            bool      `json:"ok"`
-	Provider      string    `json:"provider"`
-	Version       int       `json:"version"`
-	NextIndex     int       `json:"nextIndex"`
-	AccountsPath  string    `json:"accountsPath"`
-	Count         int       `json:"count"`
-	EnabledCount  int       `json:"enabledCount"`
-	DisabledCount int       `json:"disabledCount"`
-	LoggedIn      bool      `json:"loggedIn"`
-	Primary       *Summary  `json:"primary"`
-	Accounts      []Summary `json:"accounts"`
+	OK                 bool      `json:"ok"`
+	Provider           string    `json:"provider"`
+	Version            int       `json:"version"`
+	NextIndex          int       `json:"nextIndex"`
+	AccountsPath       string    `json:"accountsPath"`
+	Count              int       `json:"count"`
+	EnabledCount       int       `json:"enabledCount"`
+	DisabledCount      int       `json:"disabledCount"`
+	DomesticCount      int       `json:"domesticCount"`
+	GlobalCount        int       `json:"globalCount"`
+	ActiveSite         string    `json:"activeSite,omitempty"`
+	ActiveEnabledCount int       `json:"activeEnabledCount"`
+	LoggedIn           bool      `json:"loggedIn"`
+	Primary            *Summary  `json:"primary"`
+	Accounts           []Summary `json:"accounts"`
 }
 
 func SummarizeStore(store Store, path string) StoreSummary {
+	return SummarizeStoreForSite(store, path, "")
+}
+
+func SummarizeStoreForSite(store Store, path, preferredSite string) StoreSummary {
+	preferredSite = strings.TrimSpace(preferredSite)
+	if preferredSite != "" {
+		preferredSite = config.NormalizeSite(preferredSite)
+	}
 	accounts := make([]Summary, 0, len(store.Accounts))
 	enabled := 0
+	domestic := 0
+	global := 0
+	activeEnabled := 0
 	loggedIn := false
 	var primary *Summary
+	var fallback *Summary
 	for _, account := range store.Accounts {
 		summary := SummarizeAccount(account)
 		accounts = append(accounts, summary)
+		site := config.NormalizeSite(summary.Site)
+		if site == "domestic" {
+			domestic++
+		} else {
+			global++
+		}
 		if summary.Enabled {
 			enabled++
-			if summary.HasCredentials && summary.LoggedIn {
-				loggedIn = true
+			if preferredSite == "" || site == preferredSite {
+				activeEnabled++
 			}
-			if primary == nil && summary.HasCredentials {
+			if summary.HasCredentials && summary.LoggedIn {
+				if preferredSite == "" || site == preferredSite {
+					loggedIn = true
+				}
+			}
+			if summary.HasCredentials {
 				copy := summary
-				primary = &copy
+				if preferredSite != "" && site == preferredSite && primary == nil {
+					primary = &copy
+				}
+				if fallback == nil {
+					fallback = &copy
+				}
+				if preferredSite == "" && primary == nil {
+					primary = &copy
+				}
 			}
 		}
+	}
+	if primary == nil {
+		primary = fallback
 	}
 	if primary == nil && len(accounts) > 0 {
 		copy := accounts[0]
 		primary = &copy
 	}
 	return StoreSummary{
-		OK:            true,
-		Provider:      "codebuddy",
-		Version:       store.Version,
-		NextIndex:     store.NextIndex,
-		AccountsPath:  path,
-		Count:         len(accounts),
-		EnabledCount:  enabled,
-		DisabledCount: len(accounts) - enabled,
-		LoggedIn:      loggedIn,
-		Primary:       primary,
-		Accounts:      accounts,
+		OK:                 true,
+		Provider:           "codebuddy",
+		Version:            store.Version,
+		NextIndex:          store.NextIndex,
+		AccountsPath:       path,
+		Count:              len(accounts),
+		EnabledCount:       enabled,
+		DisabledCount:      len(accounts) - enabled,
+		DomesticCount:      domestic,
+		GlobalCount:        global,
+		ActiveSite:         preferredSite,
+		ActiveEnabledCount: activeEnabled,
+		LoggedIn:           loggedIn,
+		Primary:            primary,
+		Accounts:           accounts,
 	}
 }
 

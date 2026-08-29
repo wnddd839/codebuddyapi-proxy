@@ -79,6 +79,7 @@ func Load() Config {
 		cfg.AdminPassword = cfg.APIKey
 	}
 	cfg.RequireAPIKey = envBool("CODEBUDDY_PROXY_REQUIRE_API_KEY", "CURSOR_DIRECT_REQUIRE_API_KEY", cfg.APIKey != "")
+	cfg.Site = NormalizeSite(cfg.Site)
 	cfg.BaseURL = envOr("CODEBUDDY_BASE_URL", "CURSOR_DIRECT_CODEBUDDY_BASE_URL", resolveDefaultBaseURL(cfg.Site, cfg.InternetEnvironment))
 	if raw := firstEnv("CODEBUDDY_PROXY_MODELS", "CURSOR_DIRECT_CODEBUDDY_MODELS"); raw != "" {
 		parts := strings.Split(raw, ",")

@@ -398,6 +398,26 @@ func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path str
 	case path == "/direct-admin/api/status" && r.Method == http.MethodGet:
 		httputil.WriteJSON(w, http.StatusOK, s.Svc.Status())
 		return
+	case path == "/direct-admin/api/pool-site" && (r.Method == http.MethodPost || r.Method == http.MethodPut):
+		var body struct {
+			Site string `json:"site"`
+		}
+		_ = httputil.ReadJSON(r, &body)
+		payload, err := s.Svc.SetPoolSite(body.Site)
+		if err != nil {
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		// Keep server-side config mirror in sync for client-config / status consumers.
+		if cfg, ok := payload["config"].(map[string]any); ok {
+			s.Cfg.BaseURL = fmt.Sprint(cfg["baseUrl"])
+			s.Cfg.InternetEnvironment = fmt.Sprint(cfg["internetEnvironment"])
+			s.Cfg.Site = fmt.Sprint(cfg["site"])
+		} else {
+			s.Cfg.Site = s.Svc.ActivePoolSite()
+		}
+		httputil.WriteJSON(w, http.StatusOK, payload)
+		return
 	case path == "/direct-admin/api/client-config" && r.Method == http.MethodGet:
 		httputil.WriteJSON(w, http.StatusOK, s.clientConfigPayload(publicOrigin))
 		return
@@ -707,7 +727,8 @@ func (s *Server) clientConfigPayload(publicOrigin string) map[string]any {
 		"apiKeyPreview":      maskAPIKey(key, 6),
 		"apiKey":             key,
 		"transport":          s.Cfg.Transport,
-		"site":               s.Cfg.Site,
+		"site":               s.Svc.ActivePoolSite(),
+		"poolSite":           s.Svc.ActivePoolSite(),
 	}
 }
 
