@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/wnddd839/codebuddy-proxy/internal/openai"
 )
 
 type writeCounter struct {
@@ -20,6 +22,37 @@ func (w *writeCounter) Write(p []byte) (int, error) {
 func (w *writeCounter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
+	}
+}
+
+func TestSSEStreamWriteStreamChunkUsesHybridMarshal(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sse, ok := NewSSEStream(rec, 1024)
+	if !ok {
+		t.Fatal("expected flusher")
+	}
+	chunk := openai.StreamChunkOf("id1", "auto", openai.Delta{Content: "hello"}, nil)
+	want, err := json.Marshal(chunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sse.WriteEvent(chunk); err != nil {
+		t.Fatal(err)
+	}
+	if err := sse.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	body := rec.Body.String()
+	if len(body) < 6 {
+		t.Fatalf("body=%q", body)
+	}
+	line := body[len("data: "):]
+	end := 0
+	for end < len(line) && line[end] != '\n' {
+		end++
+	}
+	if string(line[:end]) != string(want) {
+		t.Fatalf("payload mismatch\nwant: %s\ngot:  %s", want, line[:end])
 	}
 }
 
