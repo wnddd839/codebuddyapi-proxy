@@ -30,8 +30,8 @@ func NewErrorWithCode(message, typ string, code any) ErrorBody {
 	return ErrorBody{Error: ErrorDetail{Message: message, Type: typ, Code: code}}
 }
 
-// ClassifyUpstream maps CodeBuddy upstream failures to OpenAI-ish error types
-// so clients (Orca/ZCode/NewAPI) can distinguish policy vs transport errors.
+// ClassifyUpstream 将 CodeBuddy 上游错误映射为 OpenAI 风格 type/code，
+// 便于 Orca/ZCode/NewAPI 等客户端区分策略错误与传输错误。
 func ClassifyUpstream(err error) (typ string, code any) {
 	if err == nil {
 		return "upstream_error", nil
@@ -54,7 +54,7 @@ func ClassifyUpstream(err error) (typ string, code any) {
 	}
 }
 
-// IsClientCanceled reports client-side abort (browser/ZCode closed the stream).
+// IsClientCanceled 判断是否为客户端主动断开（浏览器/ZCode 关闭流）。
 func IsClientCanceled(err error) bool {
 	if err == nil {
 		return false
@@ -216,7 +216,7 @@ func StreamChunkOf(id, model string, delta Delta, finishReason *string) StreamCh
 	}
 }
 
-// StreamUsageChunk emits the OpenAI include_usage final chunk (empty choices + usage).
+// StreamUsageChunk 发送 OpenAI include_usage 风格的收尾 chunk（空 choices + usage）。
 func StreamUsageChunk(id, model string, usage Usage) StreamChunk {
 	u := usage
 	return StreamChunk{

@@ -6,8 +6,7 @@ import (
 	"github.com/wnddd839/codebuddy-proxy/internal/models"
 )
 
-// modelsFlight coalesces concurrent model-list fetches for the same cache key
-// without pulling in golang.org/x/sync.
+// modelsFlight 合并同一 cache key 的并发模型列表请求，不引入 golang.org/x/sync。
 type modelsFlight struct {
 	mu sync.Mutex
 	m  map[string]*modelsCall

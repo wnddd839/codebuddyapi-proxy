@@ -8,14 +8,14 @@ import (
 	"strings"
 )
 
-// LoadDotEnv loads KEY=VALUE pairs from nearby .env files into the process
-// environment. Existing process env vars always win (are not overwritten).
+// LoadDotEnv 从就近 .env 加载 KEY=VALUE 到进程环境。
+// 已存在的环境变量不会被覆盖。
 //
-// Search order:
-//  1. CODEBUDDY_PROXY_ENV_FILE (if set)
-//  2. ./.env (current working directory)
-//  3. <executable-dir>/.env
-//  4. ../.env (repo root when running from go-codebuddy/)
+// 搜索顺序：
+//  1. CODEBUDDY_PROXY_ENV_FILE（若设置）
+//  2. ./.env（当前工作目录）
+//  3. <可执行文件目录>/.env
+//  4. ../.env（从 go-codebuddy/ 运行时即仓库根目录）
 func LoadDotEnv() (loaded []string, err error) {
 	candidates := make([]string, 0, 4)
 	if custom := strings.TrimSpace(os.Getenv("CODEBUDDY_PROXY_ENV_FILE")); custom != "" {
@@ -59,7 +59,7 @@ func loadDotEnvFile(path string) error {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
-	// Allow long values (JWT-ish) without failing.
+	// 允许较长值（如 JWT），避免 scanner 失败。
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	lineNo := 0
 	for scanner.Scan() {
@@ -81,7 +81,7 @@ func loadDotEnvFile(path string) error {
 		}
 		value = strings.TrimSpace(value)
 		value = unquoteEnvValue(value)
-		// Never override real process env.
+		// 不覆盖已有进程环境变量。
 		if _, exists := os.LookupEnv(key); exists {
 			continue
 		}
@@ -99,14 +99,14 @@ func unquoteEnvValue(value string) string {
 	if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
 		return value[1 : len(value)-1]
 	}
-	// Strip inline comments for unquoted values: KEY=val # comment
+	// 无引号值去掉行内注释：KEY=val # comment
 	if i := strings.Index(value, " #"); i >= 0 {
 		return strings.TrimSpace(value[:i])
 	}
 	return value
 }
 
-// ResolveEnvFilePath picks where generated settings should be persisted.
+// ResolveEnvFilePath 决定生成配置写入哪个 .env 文件。
 func ResolveEnvFilePath() string {
 	if custom := strings.TrimSpace(os.Getenv("CODEBUDDY_PROXY_ENV_FILE")); custom != "" {
 		return expandHome(custom)
@@ -136,14 +136,14 @@ func ResolveEnvFilePath() string {
 	return ".env"
 }
 
-// UpsertEnvFile sets keys in a .env file (create if missing). Preserves other
-// lines/comments. Values are written unquoted when safe.
+// UpsertEnvFile 写入/更新 .env 键值（不存在则创建），保留其它行与注释。
+// 安全时可不写引号。
 func UpsertEnvFile(path string, values map[string]string) error {
 	if path == "" {
 		return fmt.Errorf("empty env file path")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil && !os.IsExist(err) {
-		// Dir may be "." — ignore.
+		// 目录可能是 "."，忽略即可。
 		if filepath.Dir(path) != "." {
 			return err
 		}
@@ -154,7 +154,7 @@ func UpsertEnvFile(path string, values map[string]string) error {
 		text := strings.ReplaceAll(string(raw), "\r\n", "\n")
 		text = strings.ReplaceAll(text, "\r", "\n")
 		existing = strings.Split(text, "\n")
-		// Drop trailing empty split artifact.
+		// 去掉 split 产生的尾部空段。
 		if len(existing) > 0 && existing[len(existing)-1] == "" {
 			existing = existing[:len(existing)-1]
 		}
@@ -197,7 +197,7 @@ func UpsertEnvFile(path string, values map[string]string) error {
 		out = append(out, line)
 	}
 
-	// Append missing keys.
+	// 追加缺失的键。
 	ordered := []string{
 		"CODEBUDDY_PROXY_API_KEY",
 		"CODEBUDDY_PROXY_ADMIN_PASSWORD",

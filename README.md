@@ -119,32 +119,35 @@ Model      codebuddy/auto  或 GET /v1/models 返回的 id
 下游可直接拉模型列表（标准 OpenAI Models API）：
 
 ```bash
-# 列表
+# 列表（默认 60s 缓存，?fresh=1 强制回源）
 curl http://127.0.0.1:32126/v1/models \
-  -H "Authorization: Bearer $CODEBUDDY_PROXY_API_KEY"
-
-# 单个模型
-curl http://127.0.0.1:32126/v1/models/codebuddy%2Fauto \
   -H "Authorization: Bearer $CODEBUDDY_PROXY_API_KEY"
 ```
 
-返回形如：
+> 只支持列表接口。**不支持** `GET /v1/models/{id}` 单模型查询（会返回 404）。
+> 请在客户端侧从列表中匹配 `id`。
+>
+> 模型 `id` 不带 `codebuddy/` 前缀（列表返回 `auto`，但请求时 `codebuddy/auto` 与 `auto` 都接受）。
+
+实测返回形如（未登录 / 上游为空时的回退结果）：
 
 ```json
 {
   "object": "list",
   "data": [
     {
-      "id": "codebuddy/auto",
+      "id": "auto",
       "object": "model",
-      "created": 1700000000,
+      "created": 1787986908,
       "owned_by": "codebuddy"
     }
   ]
 }
 ```
 
-有 OAuth 账号时，列表会尽量来自协议 `/v3/config`；国际站 `/v3/config` 常空时会合并 CLI 模型目录（gpt / gemini 等）。否则至少返回 `codebuddy/auto`（上游映射为 `default-model`）。
+有 OAuth 账号时，列表来自协议 `/v3/config`，并附带 `credits` / `credit_multiplier` / `free` / `description` 等可选字段。
+国际站 `/v3/config` 常空时会合并 CLI 模型目录（gpt / gemini 等）。
+否则至少返回 `auto`（上游映射为 `default-model`）。
 
 ```bash
 curl http://127.0.0.1:32126/v1/chat/completions \
@@ -189,15 +192,33 @@ CODEBUDDY_BASE_URL=https://www.codebuddy.ai
 | :--- | :--- |
 | 产品页 | [wnddd839.github.io/proxy-codebuddy](https://wnddd839.github.io/proxy-codebuddy/) |
 | 文档索引 | [`go-codebuddy/docs/README.md`](go-codebuddy/docs/README.md) |
+| 快速开始 | [`docs/guides/getting-started.md`](go-codebuddy/docs/guides/getting-started.md) |
+| 配置参考 | [`docs/guides/configuration.md`](go-codebuddy/docs/guides/configuration.md) |
+| 架构说明 | [`docs/architecture/overview.md`](go-codebuddy/docs/architecture/overview.md) |
+| HTTP API | [`docs/api/http.md`](go-codebuddy/docs/api/http.md) |
+| 运维排障 | [`docs/operations/runbook.md`](go-codebuddy/docs/operations/runbook.md) |
 | 预编译包 | [GitHub Releases](https://github.com/wnddd839/proxy-codebuddy/releases/latest) · [`go-codebuddy/releases/README.md`](go-codebuddy/releases/README.md) |
 | 编码标准 | [`go-codebuddy/docs/standards/coding-standards.md`](go-codebuddy/docs/standards/coding-standards.md) |
+| 更新日记 | [`CHANGELOG.md`](CHANGELOG.md) · [安全说明](SECURITY.md) |
 
-常用命令（仓库根目录）：
+### 常用命令
+
+仓库根目录：
 
 ```bash
 make test    # go test ./...
 make build   # 产出 go-codebuddy/bin/
 make run
+make release # 四平台交叉编译 + SHA256SUMS.txt
+```
+
+`go-codebuddy/` 目录下另有：
+
+```bash
+make fmt         # gofmt -w
+make vet         # go vet ./...
+make test-race   # go test -race ./...
+make check       # fmt + vet + test-race
 ```
 
 ---

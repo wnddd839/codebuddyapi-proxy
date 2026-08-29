@@ -8,6 +8,11 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### 审计修复：正则预编译 + 重试深度上限
+- `ResolveProviderModel` / 鉴权与换号判断的正则改为包级预编译，消除热路径重复编译。
+- `CompleteFromPool` 增加 `RetryDepth` 上限（max=3），防止换号与 OAuth 刷新交织时递归放大。
+- 核心包注释改为中文并适当补全（gateway / provider / accounts / config / server 等）。
+
 ### Token / cache usage 透传
 - 流式收尾补发 OpenAI `include_usage` 风格 usage chunk（此前 finish 后直接 DONE，CCSwitch 等拿不到 token）。
 - `usage` 保留 `prompt_tokens_details.cached_tokens`，并兼容 Anthropic/DeepSeek 缓存字段别名。

@@ -32,8 +32,8 @@ type Server struct {
 func New(cfg config.Config, svc *gateway.Service) *Server {
 	s := &Server{Svc: svc}
 	mux := http.NewServeMux()
-	// Go 1.22+ method-aware patterns (http_servemux_patterns)
-	// Avoid method-specific trailing-slash subtree patterns colliding with deeper exact routes.
+	// Go 1.22+ 方法感知路由（http_servemux_patterns）
+	// 避免与方法相关的尾斜杠子树与更深层精确路由冲突。
 	mux.HandleFunc("OPTIONS /{$}", s.handleOptions)
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("HEAD /health", s.handleHealth)
@@ -151,8 +151,8 @@ func (s *Server) authorizeAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if token != "" && (secretEqual(token, cfg.AdminPassword) || secretEqual(token, cfg.APIKey)) {
 		return true
 	}
-	// Intentionally no ?password= query auth: secrets in URLs leak into proxy logs,
-	// browser history, and Referer. Use Basic Auth or Bearer instead.
+	// 故意不支持 ?password= 查询参数鉴权：URL 中的密钥会进入代理日志、
+	// 浏览器历史与 Referer。请用 Basic Auth 或 Bearer。
 	w.Header().Set("WWW-Authenticate", `Basic realm="CodeBuddy Admin"`)
 	httputil.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "admin auth required"})
 	return false
@@ -239,7 +239,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	result, err := s.Svc.CompleteFromPool(r.Context(), completeOpts)
 	if err != nil {
 		if openai.IsClientCanceled(err) {
-			// Client aborted before/during non-stream aggregation — not a gateway fault.
+			// 客户端在非流式聚合前/中主动断开，不算网关故障。
 			finish(true, 0, 0, 0, 0, "", provider.Usage{})
 			return
 		}
@@ -296,8 +296,8 @@ func (s *Server) streamChat(
 		flusher.Flush()
 	}
 
-	// Open SSE immediately so clients don't treat upstream connect latency as a hang,
-	// and so keep-alive comments have a live response to write into.
+	// 立即打开 SSE，避免客户端把上游建连延迟误判为挂起；
+	// 也让 keep-alive 注释有可写的响应流。
 	writeLocked(startStream)
 
 	ctx, cancel := context.WithCancel(r.Context())
@@ -305,7 +305,7 @@ func (s *Server) streamChat(
 
 	keepAlive := s.Svc.Config().StreamKeepAlive
 	if keepAlive <= 0 {
-		// Frequent enough that ZCode/NewAPI do not treat long upstream TTFB as a hang.
+		// 频率足够高，避免 ZCode/NewAPI 把长 TTFB 误判为挂起。
 		keepAlive = 5 * time.Second
 	}
 	keepAliveStop := make(chan struct{})
@@ -362,8 +362,8 @@ func (s *Server) streamChat(
 	result, err := s.Svc.CompleteFromPool(ctx, opts)
 	if err != nil {
 		if openai.IsClientCanceled(err) {
-			// ZCode/browser often abort slow models (hy4-preview) and retry —
-			// that surfaces as context canceled, not an upstream outage.
+			// ZCode/浏览器常因慢模型（hy4-preview）中止并重试——
+			// 表现为 context canceled，而非上游宕机。
 			finish(true, streamedChars, 0, 0, 0, "", provider.Usage{})
 			writeLocked(func() { done = true })
 			return
@@ -412,7 +412,7 @@ func (s *Server) streamChat(
 			finishReason = "tool_calls"
 		}
 		_ = httputil.WriteSSE(w, openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{}, &finishReason))
-		// OpenAI stream_options.include_usage style: trailing chunk with usage + empty choices.
+		// OpenAI stream_options.include_usage 风格：收尾 chunk 带 usage、choices 为空。
 		_ = httputil.WriteSSE(w, openai.StreamUsageChunk(id, providerModel.PublicModel, openai.UsageFromProvider(result.Turn.Usage)))
 		httputil.WriteSSEDone(w)
 		done = true
@@ -687,7 +687,7 @@ func (s *Server) handleOAuthLaunch(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
 	setCookie := fmt.Sprintf("cursor_codebuddy_oauth=%s; Path=/; Max-Age=900; HttpOnly; SameSite=Lax", token)
-	// Authorize under the service lock; never race on a shared *OAuthSession.
+	// 在 service 锁内鉴权；禁止对共享 *OAuthSession 产生竞态。
 	if !s.Svc.OAuthLaunchAuthorized(id, token) {
 		w.Header().Set("Set-Cookie", setCookie)
 		httputil.WriteHTML(w, http.StatusForbidden, admin.LaunchPage("登录入口已失效或参数不正确，请回到管理台重新生成 CodeBuddy 登录入口。", false))
@@ -720,7 +720,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok, _ := payload["ok"].(bool)
-	// Re-read a value snapshot after poll.
+	// poll 后重新读取值快照。
 	liveAfter := s.Svc.CurrentOAuth()
 	msg := "CodeBuddy 登录已确认，账号已导入账号池。"
 	if !ok {
@@ -754,7 +754,7 @@ func (s *Server) clientConfigPayload(publicOrigin string) map[string]any {
 	}
 }
 
-// GenerateProxyAPIKey creates a gateway API key (cbp_...).
+// GenerateProxyAPIKey 生成网关 API Key（cbp_... 前缀）。
 func GenerateProxyAPIKey() (string, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {

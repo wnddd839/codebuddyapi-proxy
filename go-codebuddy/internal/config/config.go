@@ -49,7 +49,7 @@ type Config struct {
 }
 
 func Load() Config {
-	// Best-effort: binary users expect .env next to the exe / cwd to just work.
+	// 尽力加载：二进制用户期望 exe/cwd 旁的 .env 自动生效。
 	_, _ = LoadDotEnv()
 
 	cfg := Config{
@@ -75,8 +75,8 @@ func Load() Config {
 		DefaultModels:       []string{"auto"},
 	}
 
-	// Empty admin password means open admin UI (local-friendly).
-	// API key gating stays independent via CODEBUDDY_PROXY_REQUIRE_API_KEY.
+	// 管理台密码为空则开放管理页（本地友好）。
+	// /v1 API Key 门禁仍由 CODEBUDDY_PROXY_REQUIRE_API_KEY 独立控制。
 	cfg.RequireAPIKey = envBool("CODEBUDDY_PROXY_REQUIRE_API_KEY", "CURSOR_DIRECT_REQUIRE_API_KEY", cfg.APIKey != "")
 	cfg.Site = NormalizeSite(cfg.Site)
 	cfg.BaseURL = envOr("CODEBUDDY_BASE_URL", "CURSOR_DIRECT_CODEBUDDY_BASE_URL", resolveDefaultBaseURL(cfg.Site, cfg.InternetEnvironment))
@@ -206,7 +206,7 @@ func NormalizeSite(value string) string {
 	case "domestic", "cn", "china", "internal":
 		return "domestic"
 	default:
-		// empty / international / global / unknown → global
+		// 空 / international / global / 未知 → 归为全球
 		return "global"
 	}
 }

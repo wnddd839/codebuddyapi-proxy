@@ -24,12 +24,11 @@ type Client struct {
 }
 
 func NewClient(cfg config.Config) *Client {
-	// IMPORTANT: do NOT set http.Client.Timeout for protocol_direct chat.
-	// CodeBuddy chat is always upstream-streamed; a total Timeout would kill
-	// long agent turns / slow models mid-SSE and make clients "reconnect".
+	// 重要：protocol_direct 聊天不要设置 http.Client.Timeout。
+	// CodeBuddy 始终上游流式；总超时会截断长 agent 回合/慢模型 SSE，导致客户端反复重连。
 	headerTimeout := cfg.HTTPTimeout
 	if headerTimeout <= 0 {
-		// Slow models (hy4-preview) can sit >60s before first upstream byte.
+		// 慢模型（hy4-preview）首字节可能超过 60s。
 		headerTimeout = 180 * time.Second
 	}
 	transport := &http.Transport{
@@ -165,14 +164,14 @@ func IsDomestic(site, internetEnvironment, baseURL string) bool {
 		strings.Contains(host, "codebuddy.cn") || strings.Contains(host, "copilot.tencent.com")
 }
 
-// RegionOf returns "domestic" or "global" for protocol_direct routing.
-// Account site / internetEnvironment win over whatever host the proxy process
-// happens to run on (VPN / overseas VPS must not flip a CN account overseas).
+// RegionOf 返回 protocol_direct 路由用的 "domestic" 或 "global"。
+// 账号 site / internetEnvironment 优先于反代进程所在主机
+//（海外 VPS/VPN 不得把国内账号打到海外）。
 func RegionOf(opts ChatOptions) string {
 	if IsDomestic(opts.Site, opts.InternetEnvironment, "") {
 		return "domestic"
 	}
-	// Fall back to BaseURL host only when site/env are unset/ambiguous.
+	// 仅当 site/env 未设置或模糊时，才回退到 BaseURL 主机判断。
 	if strings.TrimSpace(opts.Site) == "" && strings.TrimSpace(opts.InternetEnvironment) == "" &&
 		IsDomestic("", "", opts.BaseURL) {
 		return "domestic"
@@ -203,7 +202,7 @@ func endpointMatchesRegion(endpoint, region string) bool {
 func ResolveProtocolDirectEndpoint(opts ChatOptions) string {
 	region := RegionOf(opts)
 	if endpoint := strings.TrimRight(strings.TrimSpace(opts.APIEndpoint), "/"); endpoint != "" {
-		// Honor explicit APIEndpoint only when it agrees with the account region.
+		// 仅当显式 APIEndpoint 与账号区域一致时才采用。
 		if endpointMatchesRegion(endpoint, region) {
 			return endpoint
 		}
@@ -222,9 +221,8 @@ func ResolveProtocolDirectEndpoint(opts ChatOptions) string {
 	return base + path
 }
 
-// ResolveProtocolDirectDomain returns the X-Domain value for chat.
-// Official CodeBuddy CLI derives this from the chat endpoint host, not from
-// the portal/login host stored on the account (often www.codebuddy.cn).
+// ResolveProtocolDirectDomain 返回 chat 请求的 X-Domain。
+// 官方 CLI 从 chat endpoint 主机推导，而非账号上的 portal 登录域（常为 www.codebuddy.cn）。
 func ResolveProtocolDirectDomain(opts ChatOptions) string {
 	if host := authorityHost(ResolveProtocolDirectEndpoint(opts)); host != "" {
 		return host
@@ -259,9 +257,8 @@ func isPortalDomain(domain string) bool {
 	}
 }
 
-// NormalizeToolChoice converts OpenAI-shaped tool_choice values into the
-// string form CodeBuddy protocol_direct accepts. Object forms cause upstream
-// 11101 ("cannot unmarshal object into ... tool_choice of type string").
+// NormalizeToolChoice 将 OpenAI 风格 tool_choice 转为 CodeBuddy protocol_direct 接受的字符串。
+// 对象形式会导致上游 11101（tool_choice 类型不匹配）。
 func NormalizeToolChoice(value any) any {
 	switch v := value.(type) {
 	case nil:
@@ -278,7 +275,7 @@ func NormalizeToolChoice(value any) any {
 		case "auto", "none", "required":
 			return typ
 		case "function":
-			// Forced-function object is not accepted upstream; keep tools usable.
+			// 上游不接受 forced-function 对象；回退 auto 以保持 tools 可用。
 			return "auto"
 		default:
 			if typ != "" && typ != "<nil>" {
@@ -310,13 +307,12 @@ func (c *Client) BuildProtocolDirectHeaders(opts ChatOptions) http.Header {
 	headers.Set("X-IDE-Name", "CLI")
 	headers.Set("X-IDE-Version", ideVersion)
 	headers.Set("X-Domain", ResolveProtocolDirectDomain(opts))
-	// Upstream /v3/config rejects bare "CLI/<ver>" with 12403
-	// ("check ua, get coding copilot version error"). Official shape keeps
-	// both CLI and CodeBuddy tokens so version parsing succeeds.
+	// 上游 /v3/config 拒绝纯 "CLI/<ver>"（12403：UA 版本解析失败）。
+	// 官方格式同时包含 CLI 与 CodeBuddy 版本段。
 	headers.Set("User-Agent", fmt.Sprintf("CLI/%s CodeBuddy/%s", ideVersion, ideVersion))
 	headers.Set("X-Product", "SaaS")
 	headers.Set("X-User-Id", strutil.First(opts.UserID, "anonymous"))
-	// Official CLI uses *-ID suffix (uppercase).
+	// 官方 CLI 会话 ID 使用大写 UUID。
 	headers.Set("X-Conversation-ID", randomUUID())
 	headers.Set("X-Conversation-Request-ID", requestID)
 	headers.Set("X-Conversation-Message-ID", messageID)
@@ -346,7 +342,7 @@ func NormalizeMessageRole(role string) string {
 	case "", "human", "ai":
 		return "user"
 	case "developer":
-		// OpenAI/ZCode "developer" is rejected by CodeBuddy upstream as 11128
+		// OpenAI/ZCode 的 "developer" 角色会被 CodeBuddy 上游以 11128 拒绝
 		// ("unapproved channel"). Map to system instructions.
 		return "system"
 	default:
@@ -427,8 +423,8 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 	if model == "" {
 		model = "auto"
 	}
-	// CodeBuddy protocol_direct rejects non-stream chat (11101). Always stream upstream;
-	// callers that want a JSON response still get an aggregated Turn via readSSE.
+	// CodeBuddy protocol_direct 拒绝非流式 chat（11101）。始终上游流式；
+	// 需要 JSON 的调用方仍通过 readSSE 聚合成 Turn。
 	messages := EnsureUpstreamMessages(opts.Messages)
 	if len(messages) == 0 {
 		return Result{}, fmt.Errorf("CodeBuddy chat completion failed: no valid messages after normalization")
@@ -800,7 +796,7 @@ func usageEventFromPayload(obj map[string]any) *Event {
 	return &Event{Type: "usage", Usage: &usage, Source: "codebuddy_openai"}
 }
 
-// ParseUsage extracts OpenAI / Anthropic / DeepSeek compatible token fields.
+// ParseUsage 解析 OpenAI / Anthropic / DeepSeek 兼容的 token 字段。
 func ParseUsage(raw map[string]any) Usage {
 	if raw == nil {
 		return Usage{}
@@ -826,7 +822,7 @@ func ParseUsage(raw map[string]any) Usage {
 			usage.CompletionTokensDetails = &CompletionTokensDetails{ReasoningTokens: reasoning}
 		}
 	}
-	// Normalize aliases into OpenAI prompt_tokens_details.cached_tokens when only vendor fields exist.
+	// 仅存在厂商别名时，归一化为 OpenAI prompt_tokens_details.cached_tokens。
 	if usage.PromptTokensDetails == nil {
 		if cached := usage.CachedTokens(); cached > 0 {
 			usage.PromptTokensDetails = &PromptTokensDetails{CachedTokens: cached}
@@ -894,7 +890,7 @@ func NormalizeModels(input any) []map[string]any {
 			}
 		}
 	}
-	// Live /v3/config returns data.models as a bare array (not a nested map).
+	// 线上 /v3/config 的 data.models 可能是裸数组（非嵌套 map）。
 	if rows == nil {
 		if arr, ok := root["models"].([]any); ok {
 			rows = arr
@@ -942,7 +938,7 @@ func NormalizeModels(input any) []map[string]any {
 	return out
 }
 
-// ParseCreditMultiplier parses upstream labels like "x0.29 credits" / "x0.00 credits".
+// ParseCreditMultiplier 解析上游标签，如 "x0.29 credits" / "x0.00 credits"。
 func ParseCreditMultiplier(raw string) (float64, bool) {
 	text := strings.ToLower(strings.TrimSpace(raw))
 	if text == "" || text == "<nil>" {

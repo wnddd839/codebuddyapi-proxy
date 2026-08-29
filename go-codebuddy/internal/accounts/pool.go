@@ -100,6 +100,7 @@ type Selection struct {
 type Pool struct {
 	path string
 
+	// mu 保护内存态；persistMu 与写盘串行，避免并发 rename 冲突。
 	mu       sync.RWMutex
 	mem      Store
 	loaded   bool
@@ -261,6 +262,7 @@ func (p *Pool) Close() error {
 }
 
 func (p *Pool) flushLoop() {
+	// 250ms 防抖合并高频 MarkResult；Stop 时正确 drain timer，避免 goroutine 泄漏。
 	defer close(p.doneCh)
 	for {
 		select {
@@ -426,7 +428,7 @@ func NormalizeAccount(raw Account, now int64) Account {
 	return account
 }
 
-// CreateAccount builds a normalized account with Enabled defaulting to true.
+// CreateAccount 构建规范化账号；未显式设置 enabled 时默认为 true。
 func CreateAccount(raw Account) Account {
 	now := time.Now().UnixMilli()
 	if !raw.enabledSet {
