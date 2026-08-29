@@ -1,6 +1,5 @@
 bin/
 *.exe
-!releases/*.exe
 *.exe~
 *.test
 *.out
@@ -8,3 +7,8 @@ bin/
 *.log
 .DS_Store
 .cache/
+
+# binaries published via GitHub Releases
+releases/codebuddy-proxy-*
+releases/SHA256SUMS.txt
+releases/*.exe

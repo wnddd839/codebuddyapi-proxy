@@ -1,19 +1,34 @@
 # Pre-built binaries
 
-可直接下载运行，无需安装 Go。
+二进制**不进 Git**。请从 GitHub Releases 下载：
 
-| 平台 | 文件 |
-|------|------|
+- 最新版：https://github.com/wnddd839/proxy-codebuddy/releases/latest
+- 镜像仓库：https://github.com/wnddd839/codebuddy-proxy/releases/latest
+
+| 平台 | 资源名 |
+|------|--------|
 | Windows x64 | `codebuddy-proxy-windows-amd64.exe` |
 | Linux x64 | `codebuddy-proxy-linux-amd64` |
 | macOS Apple Silicon | `codebuddy-proxy-darwin-arm64` |
 | macOS Intel | `codebuddy-proxy-darwin-amd64` |
 
-校验：`SHA256SUMS.txt`
+校验文件随 Release 附带：`SHA256SUMS.txt`
+
+本目录只保留说明与模板：
+
+- `README.md`（本文件）
+- `.env.example`
+
+本地从源码打包：
+
+```bash
+cd go-codebuddy
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o releases/codebuddy-proxy-windows-amd64.exe ./cmd/codebuddy-proxy
+```
 
 ## Windows 快速开始
 
-1. 下载 `codebuddy-proxy-windows-amd64.exe`
+1. 从 [Releases](https://github.com/wnddd839/proxy-codebuddy/releases/latest) 下载 `codebuddy-proxy-windows-amd64.exe`
 2. 直接运行（会自动读取/创建同目录 `.env`）
 
 ```powershell
@@ -41,7 +56,7 @@ chmod +x ./codebuddy-proxy-linux-amd64   # 或 darwin 对应文件
 | `CODEBUDDY_PROXY_ADMIN_PASSWORD` | 管理后台密码；**留空=免密**（本地推荐）。API Key 仍可单独开启 |
 | `CODEBUDDY_PROXY_API_KEY` | 客户端 API Key |
 | `CODEBUDDY_PROXY_PORT` | 端口，默认 `32126` |
-| `CODEBUDDY_SITE` | `domestic` 或 `international` |
+| `CODEBUDDY_SITE` | `domestic` 或 `global` |
 | `CODEBUDDY_PROXY_ACCOUNTS_PATH` | 账号池 JSON 路径 |
 
-完整说明见 [`docs/guides/getting-started.md`](docs/guides/getting-started.md)。
+完整说明见 [`../docs/guides/getting-started.md`](../docs/guides/getting-started.md)。

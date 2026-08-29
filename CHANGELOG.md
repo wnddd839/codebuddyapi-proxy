@@ -8,6 +8,12 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### 二进制改走 GitHub Releases
+- 仓库不再跟踪 `go-codebuddy/releases/codebuddy-proxy-*` 预编译包（约 30MB）。
+- 二进制通过 `gh release` 发布到 GitHub Releases；Git 只保留源码与 `releases/README.md` / `.env.example`。
+- 下载入口：https://github.com/wnddd839/proxy-codebuddy/releases/latest
+
+
 本次把外部审计里的 **Batch A / B / C** 全部落地，并补齐此前已合入但未完整成文的体验修复。本地 `main` 相对远程新增提交：
 
 | Commit | 摘要 |
