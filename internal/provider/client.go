@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -298,7 +299,10 @@ func (c *Client) BuildProtocolDirectHeaders(opts ChatOptions) http.Header {
 	headers.Set("X-IDE-Name", "CLI")
 	headers.Set("X-IDE-Version", ideVersion)
 	headers.Set("X-Domain", ResolveProtocolDirectDomain(opts))
-	headers.Set("User-Agent", fmt.Sprintf("CLI/%s", ideVersion))
+	// Upstream /v3/config rejects bare "CLI/<ver>" with 12403
+	// ("check ua, get coding copilot version error"). Official shape keeps
+	// both CLI and CodeBuddy tokens so version parsing succeeds.
+	headers.Set("User-Agent", fmt.Sprintf("CLI/%s CodeBuddy/%s", ideVersion, ideVersion))
 	headers.Set("X-Product", "SaaS")
 	headers.Set("X-User-Id", strutil.First(opts.UserID, "anonymous"))
 	// Official CLI uses *-ID suffix (uppercase).
@@ -821,6 +825,12 @@ func NormalizeModels(input any) []map[string]any {
 			}
 		}
 	}
+	// Live /v3/config returns data.models as a bare array (not a nested map).
+	if rows == nil {
+		if arr, ok := root["models"].([]any); ok {
+			rows = arr
+		}
+	}
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		m, ok := row.(map[string]any)
@@ -836,16 +846,52 @@ func NormalizeModels(input any) []map[string]any {
 				continue
 			}
 		}
-		out = append(out, map[string]any{
+		credits := strings.TrimSpace(fmt.Sprint(m["credits"]))
+		if credits == "<nil>" {
+			credits = ""
+		}
+		item := map[string]any{
 			"id":             id,
 			"object":         "model",
 			"name":           strutil.First(fmt.Sprint(m["name"]), fmt.Sprint(m["label"]), fmt.Sprint(m["displayName"]), id),
 			"owned_by":       strutil.First(fmt.Sprint(m["vendor"]), fmt.Sprint(m["provider"]), "codebuddy"),
 			"supportsTools":  truthy(m["supportsToolCall"]) || truthy(m["supportsTools"]),
 			"supportsImages": truthy(m["supportsImages"]) || truthy(m["supportsImage"]),
-		})
+		}
+		if credits != "" {
+			item["credits"] = credits
+			if mult, ok := ParseCreditMultiplier(credits); ok {
+				item["creditMultiplier"] = mult
+				item["free"] = mult == 0
+			}
+		}
+		if desc := strutil.First(fmt.Sprint(m["descriptionZh"]), fmt.Sprint(m["descriptionEn"])); desc != "" && desc != "<nil>" {
+			item["description"] = desc
+		}
+		out = append(out, item)
 	}
 	return out
+}
+
+// ParseCreditMultiplier parses upstream labels like "x0.29 credits" / "x0.00 credits".
+func ParseCreditMultiplier(raw string) (float64, bool) {
+	text := strings.ToLower(strings.TrimSpace(raw))
+	if text == "" || text == "<nil>" {
+		return 0, false
+	}
+	text = strings.TrimPrefix(text, "x")
+	text = strings.TrimSpace(text)
+	for _, suffix := range []string{" credits", " credit", "credits", "credit"} {
+		if strings.HasSuffix(text, suffix) {
+			text = strings.TrimSpace(strings.TrimSuffix(text, suffix))
+			break
+		}
+	}
+	n, err := strconv.ParseFloat(text, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func extractErrorMessage(raw []byte, status int) string {

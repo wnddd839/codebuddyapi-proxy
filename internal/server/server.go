@@ -164,12 +164,25 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	created := time.Now().Unix()
 	data := make([]map[string]any, 0, len(models))
 	for _, model := range models {
-		data = append(data, map[string]any{
+		item := map[string]any{
 			"id":       model.ID,
 			"object":   "model",
 			"created":  created,
 			"owned_by": strutil.First(model.OwnedBy, "codebuddy"),
-		})
+		}
+		if model.Credits != "" {
+			item["credits"] = model.Credits
+		}
+		if model.CreditMultiplier != nil {
+			item["credit_multiplier"] = *model.CreditMultiplier
+		}
+		if model.Free != nil {
+			item["free"] = *model.Free
+		}
+		if model.Description != "" {
+			item["description"] = model.Description
+		}
+		data = append(data, item)
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }

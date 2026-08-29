@@ -128,3 +128,34 @@ func TestEnsureUpstreamMessagesMapsDeveloper(t *testing.T) {
 		t.Fatalf("developer role=%v want system", out[0]["role"])
 	}
 }
+
+func TestNormalizeModelsPreservesCredits(t *testing.T) {
+	rows := provider.NormalizeModels(map[string]any{
+		"data": map[string]any{
+			"models": []any{
+				map[string]any{"id": "hy4-preview", "name": "Hy4 preview", "credits": "x0.00 credits", "supportsToolCall": true},
+				map[string]any{"id": "hy4-preview-x", "name": "Hy4 preview", "credits": "x0.29 credits", "supportsToolCall": true},
+			},
+		},
+	})
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 models, got %d (%v)", len(rows), rows)
+	}
+	if rows[0]["credits"] != "x0.00 credits" || rows[0]["free"] != true {
+		t.Fatalf("free model extras: %+v", rows[0])
+	}
+	if rows[1]["credits"] != "x0.29 credits" || rows[1]["creditMultiplier"] != 0.29 {
+		t.Fatalf("paid model extras: %+v", rows[1])
+	}
+}
+
+func TestParseCreditMultiplier(t *testing.T) {
+	n, ok := provider.ParseCreditMultiplier("x0.29 credits")
+	if !ok || n != 0.29 {
+		t.Fatalf("got %v %v", n, ok)
+	}
+	n, ok = provider.ParseCreditMultiplier("x0.00 credits")
+	if !ok || n != 0 {
+		t.Fatalf("got %v %v", n, ok)
+	}
+}

@@ -23,17 +23,21 @@ var fallbackPaths = []string{
 }
 
 type Model struct {
-	ID             string `json:"id"`
-	ModelID        string `json:"modelId"`
-	UpstreamID     string `json:"upstreamId"`
-	Name           string `json:"name"`
-	DisplayName    string `json:"displayName"`
-	Object         string `json:"object"`
-	OwnedBy        string `json:"owned_by"`
-	SupportsTools  bool   `json:"supportsTools"`
-	SupportsImages bool   `json:"supportsImages"`
-	Verified       bool   `json:"verified"`
-	Source         string `json:"source"`
+	ID               string   `json:"id"`
+	ModelID          string   `json:"modelId"`
+	UpstreamID       string   `json:"upstreamId"`
+	Name             string   `json:"name"`
+	DisplayName      string   `json:"displayName"`
+	Object           string   `json:"object"`
+	OwnedBy          string   `json:"owned_by"`
+	SupportsTools    bool     `json:"supportsTools"`
+	SupportsImages   bool     `json:"supportsImages"`
+	Credits          string   `json:"credits,omitempty"`
+	CreditMultiplier *float64 `json:"creditMultiplier,omitempty"`
+	Free             *bool    `json:"free,omitempty"`
+	Description      string   `json:"description,omitempty"`
+	Verified         bool     `json:"verified"`
+	Source           string   `json:"source"`
 }
 
 type ListResult struct {
@@ -93,7 +97,11 @@ func ToAdminModels(rows []map[string]any, source string) []Model {
 			continue
 		}
 		name := strutil.First(fmt.Sprint(row["name"]), fmt.Sprint(row["displayName"]), upstreamID)
-		out = append(out, Model{
+		credits := strings.TrimSpace(fmt.Sprint(row["credits"]))
+		if credits == "<nil>" {
+			credits = ""
+		}
+		model := Model{
 			ID:             PublicModelID(upstreamID),
 			ModelID:        upstreamID,
 			UpstreamID:     upstreamID,
@@ -103,9 +111,22 @@ func ToAdminModels(rows []map[string]any, source string) []Model {
 			OwnedBy:        "codebuddy",
 			SupportsTools:  truthy(row["supportsTools"]) || truthy(row["supportsToolCall"]),
 			SupportsImages: truthy(row["supportsImages"]) || truthy(row["supportsImage"]),
+			Credits:        credits,
+			Description:    strutil.First(fmt.Sprint(row["description"]), fmt.Sprint(row["descriptionZh"]), fmt.Sprint(row["descriptionEn"])),
 			Verified:       allVerified || upstreamID == "auto",
 			Source:         source,
-		})
+		}
+		if model.Description == "<nil>" {
+			model.Description = ""
+		}
+		if credits != "" {
+			if mult, ok := provider.ParseCreditMultiplier(credits); ok {
+				model.CreditMultiplier = &mult
+				free := mult == 0
+				model.Free = &free
+			}
+		}
+		out = append(out, model)
 	}
 	return out
 }

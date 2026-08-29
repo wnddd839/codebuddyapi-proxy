@@ -535,8 +535,13 @@ function renderModels(data){
   chips.innerHTML = list.map(function(m){
     const raw = typeof m === 'string' ? m : (m.modelId || m.upstreamId || m.id || m.name || m.model || 'model');
     const id = bareModelId(raw);
-    const label = typeof m === 'string' ? id : bareModelId(m.displayName || m.name || id);
-    return '<button type="button" class="chip btnish" data-copy="' + escapeHtml(id) + '" title="点击复制">' + escapeHtml(label) + '</button>';
+    const baseLabel = typeof m === 'string' ? id : bareModelId(m.displayName || m.name || id);
+    const credits = (typeof m === 'object' && m && m.credits) ? String(m.credits) : '';
+    const free = typeof m === 'object' && m && (m.free === true || /x0(\.0+)?\s*credits/i.test(credits));
+    const mult = (typeof m === 'object' && m && m.creditMultiplier != null) ? m.creditMultiplier : null;
+    const badge = credits ? (' · ' + (free ? '免费' : credits.replace(/\s*credits$/i,''))) : '';
+    const tip = [id, credits ? ('倍率 ' + credits) : '', (m && m.description) ? m.description : ''].filter(Boolean).join(' | ');
+    return '<button type="button" class="chip btnish" data-copy="' + escapeHtml(id) + '" title="' + escapeHtml(tip || '点击复制') + '">' + escapeHtml(baseLabel + badge) + (free ? ' <span class="badge on">免费</span>' : (mult!=null && credits ? ' <span class="badge site">' + escapeHtml(String(mult)+'x') + '</span>' : '')) + '</button>';
   }).join('');
   chips.querySelectorAll('[data-copy]').forEach(function(btn){
     btn.addEventListener('click', function(){ copyText(btn.getAttribute('data-copy'), '模型', btn); });
