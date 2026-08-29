@@ -142,11 +142,12 @@ wc -c docs/index.html
 
 不合入也可：现网 `index.html` 已达标；本规格是**增强路线**，不是 blocker。
 
-**决策记录**（2026-08-29）：
+**决策记录**（2026-08-29，更新）：
 
 - 参考 sysc-Go 氛围，**不**引入该库或任何终端依赖  
-- 试验稿见 `docs/preview-particles.html`  
-- Go 二进制体积与 RSS 目标不变；环境层仅静态页  
+- Phase A 已合入 `docs/index.html`（grid + beams + route；glyph rain 默认关）  
+- 管理台仅 CSS 网格/径向光（`page.go` body::before/::after），**无 Canvas**  
+- Go 二进制体积与 RSS 目标不变  
 
 ---
 

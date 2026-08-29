@@ -46,6 +46,23 @@ body{
   color:var(--ink);
   background:var(--bg);
   letter-spacing:.01em;
+  position:relative;
+}
+body::before{
+  content:"";
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    linear-gradient(rgba(242,239,230,.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242,239,230,.028) 1px, transparent 1px);
+  background-size:72px 72px;
+  mask-image:radial-gradient(ellipse 85% 75% at 50% 15%, #000 8%, transparent 72%);
+}
+body::after{
+  content:"";
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse 48% 38% at 92% 6%, rgba(232,138,74,.11), transparent 55%),
+    radial-gradient(ellipse 42% 34% at 4% 94%, rgba(94,196,168,.07), transparent 52%);
 }
 a{color:inherit}
 .shell{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:20px 24px 64px}
@@ -58,7 +75,12 @@ a{color:inherit}
 .brand{display:flex;align-items:center;gap:12px;min-width:0}
 .mark{
   width:28px;height:28px;border-radius:6px;flex:none;
-  background:var(--accent);
+  border:1px solid var(--line);
+  background:
+    radial-gradient(circle at 30% 35%, rgba(232,138,74,.35), transparent 55%),
+    radial-gradient(circle at 70% 65%, rgba(94,196,168,.25), transparent 50%),
+    #121816;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
 }
 .brand-copy{min-width:0}
 .brand-copy strong{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em}
@@ -79,7 +101,8 @@ a{color:inherit}
 @media (max-width:1024px){.hero{grid-template-columns:1fr}}
 .panel{
   position:relative;border-radius:var(--r-card);padding:0;
-  background:var(--bg-elev);border:1px solid var(--line);box-shadow:none;
+  background:color-mix(in srgb, var(--bg-elev) 90%, transparent);
+  border:1px solid var(--line);box-shadow:none;
 }
 .panel-inner{
   height:100%;border-radius:var(--r-card);background:transparent;
@@ -103,7 +126,8 @@ h1{
 @media (max-width:720px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .metric{
   padding:12px;border-radius:var(--r-card);
-  background:var(--bg-input);border:1px solid var(--line-soft);
+  background:color-mix(in srgb, var(--bg-input) 92%, transparent);
+  border:1px solid var(--line-soft);
 }
 .metric .k{font-size:11px;color:var(--ink-dim);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
 .metric .v{margin-top:6px;font-family:var(--mono);font-size:20px;letter-spacing:-.02em;font-weight:500;text-align:right}
