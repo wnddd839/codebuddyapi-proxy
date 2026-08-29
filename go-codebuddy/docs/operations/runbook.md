@@ -53,10 +53,10 @@ curl -fsS http://127.0.0.1:32126/health
 
 ## OAuth「登录入口已失效」
 
-根因是 session 对象被整体替换后，launch/callback 仍持有旧引用。
+根因是 launch/callback 在锁外读共享 `*OAuthSession`，与 `StartOAuth` 原地重置并发时会发生 data race。
 
 Go 版修复：
-- `oauth` 使用指针并 `resetOAuthSessionLocked` 原地更新
-- launch/callback 通过 `LiveOAuthSession()` 读取当前 session
+- launch/callback 用 `OAuthLaunchAuthorized(id, token)` 在锁内比对凭据
+- 业务字段通过 `CurrentOAuth()` / `LiveOAuthSession()` **值快照**读取，不再外泄可变指针
 
 验证：重新点「开始认证」，用**新生成**的 launch 链接，应 302 到 codebuddy.cn/login。

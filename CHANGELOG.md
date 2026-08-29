@@ -2,6 +2,11 @@
 
 ## 2026-08-29
 
+### OAuth session 并发安全
+- `LiveOAuthSession()` 改为返回值快照（不再外泄可变指针）。
+- launch/callback 统一走锁内 `OAuthLaunchAuthorized(id, token)`。
+- 增加 `go test -race` 覆盖的并发重置/鉴权测试；更新 runbook。
+
 ### 仓库卫生 / 许可证
 - 补齐根目录 `LICENSE`（BSD-3-Clause），与 README badge 一致。
 - 增加 `.gitattributes`（`*.go` 强制 LF），避免 gofmt/CRLF 漂移。
