@@ -1,6 +1,7 @@
 bin/
 *.exe
 !go-codebuddy/releases/*.exe
+*.exe~
 *.test
 *.out
 .env
@@ -9,3 +10,14 @@ bin/
 node_modules/
 go-codebuddy/bin/
 go-codebuddy/.env
+
+# local agent / IDE scratch
+.cline/
+.omo/
+.idea/
+.vscode/
+
+# accidental literal home / temp artifacts
+~/
+preview.html
+admin-models.json
