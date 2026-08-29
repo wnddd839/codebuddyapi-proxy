@@ -1,6 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" fill="none">
-  <rect width="72" height="72" rx="16" fill="#12140F"/>
-  <path d="M18 38c0-10 8-18 18-18s18 8 18 18" stroke="#C45C26" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="36" cy="40" r="7" fill="#F3EFE4"/>
-  <path d="M28 52h16" stroke="#2F6B5A" stroke-width="3.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="cbpTitle">
+  <title id="cbpTitle">CodeBuddy Proxy</title>
+  <defs>
+    <linearGradient id="cbpIn" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F2A065"/>
+      <stop offset="1" stop-color="#E86F3A"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="#0E1110"/>
+  <g fill="none" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M50 84 122 128 50 172" stroke="url(#cbpIn)"/>
+    <path d="M122 128h84" stroke="#5EC4A8"/>
+  </g>
 </svg>

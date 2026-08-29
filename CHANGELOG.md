@@ -1,7 +1,7 @@
 # 更新日记
 
 > CodeBuddy Proxy（Go · `protocol_direct`）发布说明。  
-> 主仓库：[`wnddd839/proxy-codebuddy`](https://github.com/wnddd839/proxy-codebuddy)  
+> 主仓库：[`wnddd839/codebuddyapi-proxy`](https://github.com/wnddd839/codebuddyapi-proxy)  
 > 镜像：[`wnddd839/codebuddy-proxy`](https://github.com/wnddd839/codebuddy-proxy)
 
 ---
@@ -49,7 +49,7 @@
 ### 二进制改走 GitHub Releases
 - 仓库不再跟踪 `go-codebuddy/releases/codebuddy-proxy-*` 预编译包（约 30MB）。
 - 二进制通过 `gh release` 发布到 GitHub Releases；Git 只保留源码与 `releases/README.md` / `.env.example`。
-- 下载入口：https://github.com/wnddd839/proxy-codebuddy/releases/latest
+- 下载入口：https://github.com/wnddd839/codebuddyapi-proxy/releases/latest
 
 
 本次把外部审计里的 **Batch A / B / C** 全部落地，并补齐此前已合入但未完整成文的体验修复。本地 `main` 相对远程新增提交：
@@ -148,5 +148,5 @@
 ## 历史里程碑（摘要）
 
 - **Go 成为产品主线**：`protocol_direct` 网关；Pages：`main` + `/docs`。
-- **主发布仓库**：`proxy-codebuddy`；`codebuddy-proxy` 作镜像。
+- **主发布仓库**：`codebuddyapi-proxy`；`codebuddy-proxy` 作源码镜像。
 - Node 版仅作本地历史备份，不再作为主发布路径。
