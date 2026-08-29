@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wnddd839/codebuddy-proxy/internal/accounts"
@@ -58,13 +59,14 @@ type OAuthSession struct {
 }
 
 type Service struct {
-	Cfg      config.Config
 	Pool     *accounts.Pool
 	Provider *provider.Client
 	OAuth    *oauth.Client
 	Models   *models.Lister
 	Log      *slog.Logger
 	Started  time.Time
+
+	runtimeCfg atomic.Pointer[config.Config]
 
 	mu    sync.Mutex
 	stats Stats
@@ -76,8 +78,7 @@ func New(cfg config.Config, logger *slog.Logger) *Service {
 		logger = slog.Default()
 	}
 	p := provider.NewClient(cfg)
-	return &Service{
-		Cfg:      cfg,
+	svc := &Service{
 		Pool:     accounts.NewPool(cfg.AccountsPath),
 		Provider: p,
 		OAuth:    oauth.NewClient(p.HTTP),
@@ -86,6 +87,42 @@ func New(cfg config.Config, logger *slog.Logger) *Service {
 		Started:  time.Now(),
 		oauth:    &OAuthSession{Status: "idle"},
 	}
+	svc.storeConfig(cfg)
+	return svc
+}
+
+// Config returns a snapshot of the runtime config (safe for concurrent readers).
+func (s *Service) Config() config.Config {
+	if p := s.runtimeCfg.Load(); p != nil {
+		return *p
+	}
+	return config.Config{}
+}
+
+func (s *Service) storeConfig(next config.Config) {
+	s.runtimeCfg.Store(&next)
+}
+
+func (s *Service) updateConfig(mutate func(*config.Config)) config.Config {
+	for {
+		old := s.runtimeCfg.Load()
+		var next config.Config
+		if old != nil {
+			next = *old
+		}
+		mutate(&next)
+		if s.runtimeCfg.CompareAndSwap(old, &next) {
+			return next
+		}
+	}
+}
+
+// SetAPIKey rotates the gateway API key and forces requireApiKey=true.
+func (s *Service) SetAPIKey(key string) config.Config {
+	return s.updateConfig(func(c *config.Config) {
+		c.APIKey = key
+		c.RequireAPIKey = true
+	})
 }
 
 type ProviderModel struct {
@@ -128,8 +165,8 @@ type CompleteOptions struct {
 // source of truth for region. Proxy process location / global CODEBUDDY_BASE_URL
 // must not send a domestic account to www.codebuddy.ai (or the reverse).
 func (s *Service) chatOptionsFromAccount(account accounts.Account, opts CompleteOptions) provider.ChatOptions {
-	site := config.NormalizeSite(strutil.First(account.Site, s.Cfg.Site))
-	internet := strutil.First(account.InternetEnvironment, s.Cfg.InternetEnvironment)
+	site := config.NormalizeSite(strutil.First(account.Site, s.Config().Site))
+	internet := strutil.First(account.InternetEnvironment, s.Config().InternetEnvironment)
 	baseURL := strings.TrimSpace(account.BaseURL)
 	if baseURL == "" {
 		if site == "domestic" {
@@ -151,7 +188,7 @@ func (s *Service) chatOptionsFromAccount(account accounts.Account, opts Complete
 		InternetEnvironment: internet,
 		// Prefer account APIEndpoint only — process-wide endpoint can point at the wrong region.
 		APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
-		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Cfg.ChatCompletionsPath),
+		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Config().ChatCompletionsPath),
 		// Domain intentionally omitted: X-Domain is derived from the chat endpoint host.
 		EnterpriseID:       account.EnterpriseID,
 		TenantID:           account.TenantID,
@@ -227,12 +264,12 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 
 func (s *Service) refreshSelected(ctx context.Context, selection accounts.Selection, force bool) (accounts.Selection, error) {
 	account := selection.Account
-	if !oauth.ShouldRefresh(account, force, s.Cfg.RefreshWindow, time.Now()) {
+	if !oauth.ShouldRefresh(account, force, s.Config().RefreshWindow, time.Now()) {
 		return selection, nil
 	}
 	token, err := s.OAuth.Refresh(ctx, oauth.RefreshOptions{
-		Site:         strutil.First(account.Site, s.Cfg.Site),
-		BaseURL:      strutil.First(account.BaseURL, s.Cfg.BaseURL),
+		Site:         strutil.First(account.Site, s.Config().Site),
+		BaseURL:      strutil.First(account.BaseURL, s.Config().BaseURL),
 		AccessToken:  account.BearerToken,
 		RefreshToken: account.RefreshToken,
 	})
@@ -243,7 +280,7 @@ func (s *Service) refreshSelected(ctx context.Context, selection accounts.Select
 		s.Log.Warn("codebuddy oauth refresh skipped after failure", "accountId", account.ID, "error", err.Error())
 		return selection, nil
 	}
-	updated := oauth.AccountFromTokenData(token, strutil.First(account.Site, s.Cfg.Site), account.Label)
+	updated := oauth.AccountFromTokenData(token, strutil.First(account.Site, s.Config().Site), account.Label)
 	updated.ID = account.ID
 	updated.Enabled = account.Enabled
 	updated.BaseURL = account.BaseURL
@@ -325,8 +362,8 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 		}
 	}
 	_ = fresh
-	site := config.NormalizeSite(strutil.First(account.Site, s.Cfg.Site))
-	internet := strutil.First(account.InternetEnvironment, s.Cfg.InternetEnvironment)
+	site := config.NormalizeSite(strutil.First(account.Site, s.Config().Site))
+	internet := strutil.First(account.InternetEnvironment, s.Config().InternetEnvironment)
 	baseURL := strings.TrimSpace(account.BaseURL)
 	if baseURL == "" {
 		if site == "domestic" {
@@ -345,13 +382,13 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 		TenantID:            account.TenantID,
 		DepartmentFullName:  account.DepartmentFullName,
 		APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
-		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Cfg.ChatCompletionsPath),
+		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Config().ChatCompletionsPath),
 	}), nil
 }
 
 func (s *Service) ConfiguredModels() []models.Model {
-	out := make([]models.Model, 0, len(s.Cfg.DefaultModels))
-	for _, id := range s.Cfg.DefaultModels {
+	out := make([]models.Model, 0, len(s.Config().DefaultModels))
+	for _, id := range s.Config().DefaultModels {
 		out = append(out, models.Model{
 			ID: models.PublicModelID(id), ModelID: id, UpstreamID: id, Name: id, DisplayName: id,
 			Object: "model", OwnedBy: "codebuddy", SupportsTools: true, Verified: id == "auto", Source: "config",
@@ -361,9 +398,7 @@ func (s *Service) ConfiguredModels() []models.Model {
 }
 
 func (s *Service) ActivePoolSite() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return config.NormalizeSite(s.Cfg.Site)
+	return config.NormalizeSite(s.Config().Site)
 }
 
 func (s *Service) SetPoolSite(site string) (map[string]any, error) {
@@ -385,11 +420,11 @@ func (s *Service) SetPoolSite(site string) (map[string]any, error) {
 		return nil, fmt.Errorf("persist pool site failed: %w", err)
 	}
 
-	s.mu.Lock()
-	s.Cfg.Site = site
-	s.Cfg.BaseURL = baseURL
-	s.Cfg.InternetEnvironment = internet
-	s.mu.Unlock()
+	s.updateConfig(func(c *config.Config) {
+		c.Site = site
+		c.BaseURL = baseURL
+		c.InternetEnvironment = internet
+	})
 	_ = os.Setenv("CODEBUDDY_SITE", site)
 	_ = os.Setenv("CODEBUDDY_BASE_URL", baseURL)
 	_ = os.Setenv("CODEBUDDY_INTERNET_ENVIRONMENT", internet)
@@ -404,18 +439,19 @@ func (s *Service) SetPoolSite(site string) (map[string]any, error) {
 }
 
 func (s *Service) Status() map[string]any {
+	cfg := s.Config()
 	s.mu.Lock()
 	stats := s.stats
-	site := config.NormalizeSite(s.Cfg.Site)
-	baseURL := s.Cfg.BaseURL
-	internet := s.Cfg.InternetEnvironment
-	host := s.Cfg.Host
-	port := s.Cfg.Port
-	requireKey := s.Cfg.RequireAPIKey
-	accountsPath := s.Cfg.AccountsPath
-	chatPath := s.Cfg.ChatCompletionsPath
-	transport := s.Cfg.Transport
 	s.mu.Unlock()
+	site := config.NormalizeSite(cfg.Site)
+	baseURL := cfg.BaseURL
+	internet := cfg.InternetEnvironment
+	host := cfg.Host
+	port := cfg.Port
+	requireKey := cfg.RequireAPIKey
+	accountsPath := cfg.AccountsPath
+	chatPath := cfg.ChatCompletionsPath
+	transport := cfg.Transport
 	store, _ := s.Pool.Read()
 	summary := accounts.SummarizeStoreForSite(store, s.Pool.Path(), site)
 	return map[string]any{
@@ -491,7 +527,7 @@ func (s *Service) resetOAuthSessionLocked(site, label, publicOrigin string) {
 	s.oauth.ID = fmt.Sprintf("%d-%s", time.Now().UnixMilli(), randomHex(4))
 	s.oauth.Token = randomHex(16)
 	s.oauth.Status = "starting"
-	s.oauth.Site = config.NormalizeSite(strutil.First(site, s.Cfg.Site, "global"))
+	s.oauth.Site = config.NormalizeSite(strutil.First(site, s.Config().Site, "global"))
 	s.oauth.Label = strutil.First(label, "CodeBuddy OAuth")
 	s.oauth.StartedAt = time.Now().UnixMilli()
 	s.oauth.UpdatedAt = s.oauth.StartedAt
@@ -505,7 +541,7 @@ func (s *Service) StartOAuth(ctx context.Context, site, label, publicOrigin stri
 	if s.oauth == nil {
 		s.oauth = &OAuthSession{Status: "idle"}
 	}
-	if reuse && s.oauth.Status == "waiting" && s.oauth.AuthState != "" && time.Since(time.UnixMilli(s.oauth.StartedAt)) < s.Cfg.OAuthSessionTTL {
+	if reuse && s.oauth.Status == "waiting" && s.oauth.AuthState != "" && time.Since(time.UnixMilli(s.oauth.StartedAt)) < s.Config().OAuthSessionTTL {
 		payload := s.oauthPayloadLocked(publicOrigin)
 		s.mu.Unlock()
 		return payload, nil

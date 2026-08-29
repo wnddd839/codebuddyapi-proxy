@@ -24,13 +24,12 @@ import (
 )
 
 type Server struct {
-	Cfg  config.Config
 	Svc  *gateway.Service
 	HTTP *http.Server
 }
 
 func New(cfg config.Config, svc *gateway.Service) *Server {
-	s := &Server{Cfg: cfg, Svc: svc}
+	s := &Server{Svc: svc}
 	mux := http.NewServeMux()
 	// Go 1.22+ method-aware patterns (http_servemux_patterns)
 	// Avoid method-specific trailing-slash subtree patterns colliding with deeper exact routes.
@@ -78,7 +77,7 @@ func (s *Server) handleOptions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "provider": "codebuddy", "transport": s.Cfg.Transport})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "provider": "codebuddy", "transport": s.Svc.Config().Transport})
 }
 
 func (s *Server) handleModelsAuth(w http.ResponseWriter, r *http.Request) {
@@ -121,14 +120,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authorizeAPI(w http.ResponseWriter, r *http.Request) bool {
-	if !s.Cfg.RequireAPIKey {
+	cfg := s.Svc.Config()
+	if !cfg.RequireAPIKey {
 		return true
 	}
 	token := httputil.BearerToken(r)
 	if token == "" {
 		token = strings.TrimSpace(r.Header.Get("X-API-Key"))
 	}
-	if token == "" || token != s.Cfg.APIKey {
+	if token == "" || token != cfg.APIKey {
 		httputil.WriteJSON(w, http.StatusUnauthorized, openai.NewError("Missing or invalid API key", "authentication_error"))
 		return false
 	}
@@ -136,18 +136,19 @@ func (s *Server) authorizeAPI(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) authorizeAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if s.Cfg.AdminPassword == "" {
+	cfg := s.Svc.Config()
+	if cfg.AdminPassword == "" {
 		return true
 	}
 	user, pass, ok := r.BasicAuth()
-	if ok && pass == s.Cfg.AdminPassword && (user == "" || user == "admin") {
+	if ok && pass == cfg.AdminPassword && (user == "" || user == "admin") {
 		return true
 	}
 	token := httputil.BearerToken(r)
-	if token != "" && (token == s.Cfg.AdminPassword || token == s.Cfg.APIKey) {
+	if token != "" && (token == cfg.AdminPassword || token == cfg.APIKey) {
 		return true
 	}
-	if q := strings.TrimSpace(r.URL.Query().Get("password")); q != "" && q == s.Cfg.AdminPassword {
+	if q := strings.TrimSpace(r.URL.Query().Get("password")); q != "" && q == cfg.AdminPassword {
 		return true
 	}
 	w.Header().Set("WWW-Authenticate", `Basic realm="CodeBuddy Admin"`)
@@ -283,7 +284,7 @@ func (s *Server) streamChat(
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	keepAlive := s.Cfg.StreamKeepAlive
+	keepAlive := s.Svc.Config().StreamKeepAlive
 	if keepAlive <= 0 {
 		// Frequent enough that ZCode/NewAPI do not treat long upstream TTFB as a hang.
 		keepAlive = 5 * time.Second
@@ -406,7 +407,7 @@ func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path str
 	if !s.authorizeAdmin(w, r) {
 		return
 	}
-	publicOrigin := httputil.PublicOrigin(r, s.Cfg.PublicBaseURL)
+	publicOrigin := httputil.PublicOrigin(r, s.Svc.Config().PublicBaseURL)
 	switch {
 	case path == "/direct-admin/api/status" && r.Method == http.MethodGet:
 		httputil.WriteJSON(w, http.StatusOK, s.Svc.Status())
@@ -420,14 +421,6 @@ func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path str
 		if err != nil {
 			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 			return
-		}
-		// Keep server-side config mirror in sync for client-config / status consumers.
-		if cfg, ok := payload["config"].(map[string]any); ok {
-			s.Cfg.BaseURL = fmt.Sprint(cfg["baseUrl"])
-			s.Cfg.InternetEnvironment = fmt.Sprint(cfg["internetEnvironment"])
-			s.Cfg.Site = fmt.Sprint(cfg["site"])
-		} else {
-			s.Cfg.Site = s.Svc.ActivePoolSite()
 		}
 		httputil.WriteJSON(w, http.StatusOK, payload)
 		return
@@ -452,8 +445,7 @@ func (s *Server) handleAdminAPI(w http.ResponseWriter, r *http.Request, path str
 			})
 			return
 		}
-		s.Cfg.APIKey = key
-		s.Cfg.RequireAPIKey = true
+		s.Svc.SetAPIKey(key)
 		payload := s.clientConfigPayload(publicOrigin)
 		payload["generated"] = true
 		payload["envFile"] = envPath
@@ -590,7 +582,7 @@ func (s *Server) handleAccountAction(w http.ResponseWriter, r *http.Request, pat
 			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "account has no credentials"})
 			return
 		}
-		usage, err := billing.FetchAccountUsage(r.Context(), s.Svc.Provider, selected, s.Cfg)
+		usage, err := billing.FetchAccountUsage(r.Context(), s.Svc.Provider, selected, s.Svc.Config())
 		if err != nil {
 			httputil.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
 			return
@@ -629,8 +621,8 @@ func (s *Server) handleAccountAction(w http.ResponseWriter, r *http.Request, pat
 			return
 		}
 		token, err := s.Svc.OAuth.Refresh(r.Context(), oauth.RefreshOptions{
-			Site:         strutil.First(selected.Site, s.Cfg.Site),
-			BaseURL:      strutil.First(selected.BaseURL, s.Cfg.BaseURL),
+			Site:         strutil.First(selected.Site, s.Svc.Config().Site),
+			BaseURL:      strutil.First(selected.BaseURL, s.Svc.Config().BaseURL),
 			AccessToken:  selected.BearerToken,
 			RefreshToken: selected.RefreshToken,
 		})
@@ -638,7 +630,7 @@ func (s *Server) handleAccountAction(w http.ResponseWriter, r *http.Request, pat
 			httputil.WriteJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
-		updated := oauth.AccountFromTokenData(token, strutil.First(selected.Site, s.Cfg.Site), selected.Label)
+		updated := oauth.AccountFromTokenData(token, strutil.First(selected.Site, s.Svc.Config().Site), selected.Label)
 		updated.ID = selected.ID
 		updated.Enabled = selected.Enabled
 		updated.BaseURL = selected.BaseURL
@@ -691,7 +683,7 @@ func (s *Server) handleOAuthLaunch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	publicOrigin := httputil.PublicOrigin(r, s.Cfg.PublicBaseURL)
+	publicOrigin := httputil.PublicOrigin(r, s.Svc.Config().PublicBaseURL)
 	setCookie := fmt.Sprintf("cursor_codebuddy_oauth=%s; Path=/; Max-Age=900; HttpOnly; SameSite=Lax", token)
 	w.Header().Set("Set-Cookie", setCookie)
 	if !s.Svc.OAuthLaunchAuthorized(id, token) {
@@ -718,8 +710,9 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) clientConfigPayload(publicOrigin string) map[string]any {
+	cfg := s.Svc.Config()
 	apiBase := strings.TrimRight(publicOrigin, "/") + "/v1"
-	key := strings.TrimSpace(s.Cfg.APIKey)
+	key := strings.TrimSpace(cfg.APIKey)
 	return map[string]any{
 		"ok":                 true,
 		"baseUrl":            apiBase,
@@ -727,11 +720,11 @@ func (s *Server) clientConfigPayload(publicOrigin string) map[string]any {
 		"apiBasePath":        "/v1",
 		"chatCompletionsUrl": apiBase + "/chat/completions",
 		"recommendedModel":   "auto",
-		"requireApiKey":      s.Cfg.RequireAPIKey,
+		"requireApiKey":      cfg.RequireAPIKey,
 		"apiKeyConfigured":   key != "",
 		"apiKeyPreview":      maskAPIKey(key, 6),
 		"apiKey":             key,
-		"transport":          s.Cfg.Transport,
+		"transport":          cfg.Transport,
 		"site":               s.Svc.ActivePoolSite(),
 		"poolSite":           s.Svc.ActivePoolSite(),
 	}

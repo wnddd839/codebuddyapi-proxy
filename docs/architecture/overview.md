@@ -28,7 +28,7 @@ server ──► gateway ──► accounts pool + oauth refresh
 | `oauth` | plugin auth / refresh / JWT decode | 路由 |
 | `provider` | 上游请求头、SSE 解析、事件累积 | 账号选择策略 |
 | `models` | 模型发现与 public id 规范化 | 流式聊天 |
-| `gateway` | 选号、刷新、失败重试、stats、OAuth session | HTML |
+| `gateway` | 选号、刷新、失败重试、stats、OAuth session、运行时配置（`atomic.Pointer`） | HTML |
 | `server` | 路由、鉴权、流式写回 | 上游协议细节 |
 | `admin` | 管理台页面字符串 | 业务状态机 |
 | `openai` | OpenAI chat/chunk 结构 | 上游映射 |
