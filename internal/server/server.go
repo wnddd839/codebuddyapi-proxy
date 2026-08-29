@@ -115,10 +115,6 @@ func (s *Server) handleFallback(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusNotFound, openai.NewError(fmt.Sprintf("Unsupported route: %s", path), "not_found_error"))
 }
 
-func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	s.handleFallback(w, r)
-}
-
 func (s *Server) authorizeAPI(w http.ResponseWriter, r *http.Request) bool {
 	cfg := s.Svc.Config()
 	if !cfg.RequireAPIKey {
@@ -738,7 +734,7 @@ func (s *Server) clientConfigPayload(publicOrigin string) map[string]any {
 		"recommendedModel":   "auto",
 		"requireApiKey":      cfg.RequireAPIKey,
 		"apiKeyConfigured":   key != "",
-		"apiKeyPreview":      maskAPIKey(key, 6),
+		"apiKeyPreview":      strutil.MaskSecret(key, 6),
 		"apiKey":             key,
 		"transport":          cfg.Transport,
 		"site":               s.Svc.ActivePoolSite(),
@@ -753,23 +749,6 @@ func GenerateProxyAPIKey() (string, error) {
 		return "", err
 	}
 	return "cbp_" + hex.EncodeToString(buf), nil
-}
-
-func maskAPIKey(value string, visible int) string {
-	text := strings.TrimSpace(value)
-	if text == "" {
-		return ""
-	}
-	if visible < 1 {
-		visible = 1
-	}
-	if len(text) <= visible*2 {
-		if visible > len(text) {
-			visible = len(text)
-		}
-		return text[:visible] + "..."
-	}
-	return text[:visible] + "..." + text[len(text)-visible:]
 }
 
 func estimatePromptChars(messages []map[string]any) int {

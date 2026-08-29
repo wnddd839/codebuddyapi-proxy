@@ -128,7 +128,7 @@ func FetchAccountUsage(ctx context.Context, client *provider.Client, account acc
 	}
 	if code, ok := asNumber(resourcePayload["code"]); ok && code != 0 {
 		msg := strutil.First(fmt.Sprint(resourcePayload["msg"]), fmt.Sprint(resourcePayload["message"]), fmt.Sprint(resourcePayload["error"]), "unknown error")
-		return UsageResult{}, fmt.Errorf("CodeBuddy credits query failed: %s", truncate(msg, 240))
+		return UsageResult{}, fmt.Errorf("CodeBuddy credits query failed: %s", strutil.Truncate(msg, 240))
 	}
 
 	accountsRaw := digSlice(resourcePayload, "data", "Response", "Data", "Accounts")
@@ -357,7 +357,7 @@ func postJSON(ctx context.Context, httpClient *http.Client, endpoint string, hea
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		msg := strutil.First(fmt.Sprint(payload["msg"]), fmt.Sprint(payload["message"]), fmt.Sprint(payload["error"]), fmt.Sprintf("HTTP %d", res.StatusCode))
-		return payload, fmt.Errorf("%s", truncate(msg, 240))
+		return payload, fmt.Errorf("%s", strutil.Truncate(msg, 240))
 	}
 	return payload, nil
 }
@@ -442,12 +442,4 @@ func formatNumber(v float64) string {
 		return fmt.Sprintf("%.0f", v)
 	}
 	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.4f", v), "0"), ".")
-}
-
-func truncate(value string, n int) string {
-	value = strings.TrimSpace(value)
-	if len(value) <= n {
-		return value
-	}
-	return value[:n]
 }

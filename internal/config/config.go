@@ -206,9 +206,7 @@ func NormalizeSite(value string) string {
 	case "domestic", "cn", "china", "internal":
 		return "domestic"
 	default:
-		if text == "" {
-			return "global"
-		}
+		// empty / international / global / unknown → global
 		return "global"
 	}
 }
