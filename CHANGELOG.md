@@ -2,6 +2,12 @@
 
 ## 2026-08-29
 
+### 仓库卫生 / 许可证
+- 补齐根目录 `LICENSE`（BSD-3-Clause），与 README badge 一致。
+- 增加 `.gitattributes`（`*.go` 强制 LF），避免 gofmt/CRLF 漂移。
+- `.gitignore` 忽略本地垃圾：`.cline/`、`.omo/`、字面量 `~/`、`preview.html`、`*.exe~`。
+- 清理本地误生成的 `~/`（含明文 OAuth session）与 IDE 临时目录。
+
 ### 模型倍率透出 + 模型列表修复
 - 上游 `/v3/config` 本身就带 `credits` 倍率（如 `x0.00 credits` / `x0.29 credits`），之前反代归一化时丢掉了。
 - 现在管理台与 `/v1/models` 都会透出：
