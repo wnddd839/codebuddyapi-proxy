@@ -35,6 +35,13 @@
       line-height: 1.55;
       overflow-x: hidden;
     }
+    #ambient {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    main, footer, .nav { position: relative; z-index: 1; }
     a { color: inherit; text-decoration: none; }
     .wrap { width: min(100% - 2rem, var(--max)); margin-inline: auto; }
 
@@ -85,37 +92,20 @@
 
     .hero {
       position: relative;
-      min-height: auto;
+      min-height: min(78vh, 820px);
       display: grid;
       align-items: end;
       padding: 4.5rem 0 3.25rem;
-      isolation: isolate;
-      overflow: hidden;
     }
-    .hero-plane {
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-      background:
-        radial-gradient(ellipse 55% 50% at 85% 15%, rgba(232,138,74,.28), transparent 55%),
-        radial-gradient(ellipse 45% 40% at 8% 85%, rgba(94,196,168,.14), transparent 50%),
-        linear-gradient(160deg, #0e1110 0%, #121816 45%, #0c0f0e 100%);
+    .hero-panel {
+      max-width: 42rem;
+      padding: 2rem 2rem 2.1rem;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(145deg, rgba(22,27,25,.86), rgba(14,17,16,.58));
+      box-shadow: 0 0 0 1px rgba(255,255,255,.03) inset, 0 24px 64px rgba(0,0,0,.35);
     }
-    .hero-plane::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background:
-        linear-gradient(rgba(242,239,230,.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(242,239,230,.035) 1px, transparent 1px);
-      background-size: 72px 72px;
-      mask-image: radial-gradient(ellipse 75% 65% at 60% 35%, #000 10%, transparent 70%);
-      animation: drift 32s linear infinite;
-    }
-    @keyframes drift {
-      from { transform: translate3d(0,0,0); }
-      to { transform: translate3d(0,72px,0); }
-    }
+    .hero-plane { display: none; }
     .hero h1 {
       font-family: var(--display);
       font-weight: 600;
@@ -240,7 +230,7 @@
     }
 
     .panel {
-      background: var(--bg-elev);
+      background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 1.25rem 1.3rem;
@@ -290,7 +280,7 @@
       overflow: hidden;
     }
     .notice-card {
-      background: var(--bg);
+      background: color-mix(in srgb, var(--bg) 94%, transparent);
       padding: 1.5rem 1.4rem;
     }
     .notice-card h3 {
@@ -339,13 +329,16 @@
     footer a:hover { color: var(--ink); }
 
     @media (prefers-reduced-motion: reduce) {
+      #ambient { display: none; }
+      .hero-panel { background: var(--bg-elev); }
       *, *::before, *::after { animation: none !important; transition: none !important; }
       .hero h1, .hero-lead, .hero-actions { opacity: 1; transform: none; }
     }
   </style>
 </head>
 <body>
-  <header class="nav">
+  <canvas id="ambient" aria-hidden="true"></canvas>
+  <header class="nav" id="nav">
     <div class="wrap nav-inner">
       <a class="brand" href="./">
         <img src="./logo.svg" alt="" />
@@ -363,8 +356,7 @@
 
   <main>
     <section class="hero" aria-label="CodeBuddy Proxy">
-      <div class="hero-plane" aria-hidden="true"></div>
-      <div class="wrap">
+      <div class="wrap hero-panel">
         <h1>CodeBuddy <span>Proxy</span></h1>
         <p class="hero-lead">
           把你的 CodeBuddy 账号，变成任何 OpenAI 客户端都能直连的 <code>/v1</code> 渠道。
@@ -534,9 +526,126 @@ Admin  <span class="hot">http://127.0.0.1:32126/direct-admin/</span></code></pre
     </div>
   </footer>
   <script>
-    // Sticky nav: only add the hairline border once the page has scrolled.
+  (function(){
+    var canvas = document.getElementById('ambient');
+    if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var ctx = canvas.getContext('2d');
+    var w = 0, h = 0, dpr = 1, beams = [], routes = [];
+    function resize(){
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = window.innerWidth; h = window.innerHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var nBeams = Math.min(8, Math.max(4, Math.floor(w / 220)));
+      beams = [];
+      for (var i = 0; i < nBeams; i++) {
+        beams.push({
+          x: (i / nBeams) * w + Math.random() * 80,
+          angle: -0.35 + Math.random() * 0.15,
+          width: 40 + Math.random() * 90,
+          speed: 0.08 + Math.random() * 0.12,
+          phase: Math.random() * Math.PI * 2,
+          hue: i % 3 === 0 ? 'teal' : 'accent'
+        });
+      }
+      var nRoute = Math.min(100, Math.floor(w * h / (window.innerWidth < 840 ? 18000 : 12000)));
+      routes = [];
+      for (var j = 0; j < nRoute; j++) {
+        routes.push({
+          side: Math.random() < 0.5 ? 'left' : 'right',
+          t: Math.random(),
+          speed: 0.002 + Math.random() * 0.004,
+          size: 1 + Math.random() * 1.5,
+          alpha: 0.12 + Math.random() * 0.28
+        });
+      }
+    }
+    function drawGrid(t){
+      var spacing = 72, off = (t * 0.012) % spacing;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(242,239,230,0.035)';
+      ctx.lineWidth = 1;
+      for (var x = -spacing; x < w + spacing; x += spacing) {
+        ctx.beginPath(); ctx.moveTo(x + off, 0); ctx.lineTo(x + off, h); ctx.stroke();
+      }
+      for (var y = -spacing; y < h + spacing; y += spacing) {
+        ctx.beginPath(); ctx.moveTo(0, y + off * 0.6); ctx.lineTo(w, y + off * 0.6); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    function drawBeams(t){
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      for (var i = 0; i < beams.length; i++) {
+        var b = beams[i];
+        var pulse = 0.55 + 0.45 * Math.sin(t * b.speed + b.phase);
+        var len = h * 1.2;
+        var cx = b.x + Math.sin(t * 0.05 + b.phase) * 30;
+        var color = b.hue === 'teal' ? 'rgba(94,196,168,' + (0.04 * pulse) + ')' : 'rgba(232,138,74,' + (0.05 * pulse) + ')';
+        ctx.save();
+        ctx.translate(cx, -40);
+        ctx.rotate(b.angle);
+        var grd = ctx.createLinearGradient(0, 0, 0, len);
+        grd.addColorStop(0, 'rgba(0,0,0,0)');
+        grd.addColorStop(0.35, color);
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grd;
+        ctx.fillRect(-b.width / 2, 0, b.width, len);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+    function drawRoutes(){
+      var hubX = w * 0.58, hubY = h * 0.38;
+      for (var i = 0; i < routes.length; i++) {
+        var p = routes[i];
+        p.t += p.speed;
+        if (p.t > 1) { p.t = 0; p.side = Math.random() < 0.5 ? 'left' : 'right'; }
+        var startX = p.side === 'left' ? w * 0.08 : w * 0.92;
+        var startY = p.side === 'left' ? h * 0.28 : h * 0.72;
+        var midX = hubX + (p.side === 'left' ? -40 : 40);
+        var tt = p.t;
+        var x = (1-tt)*(1-tt)*startX + 2*(1-tt)*tt*midX + tt*tt*hubX;
+        var y = (1-tt)*(1-tt)*startY + 2*(1-tt)*tt*hubY + tt*tt*hubY;
+        var outPhase = Math.max(0, (tt - 0.72) / 0.28);
+        var px = x, py = y, col = '232,138,74';
+        if (outPhase > 0) { px = hubX + outPhase * (w * 0.2); py = hubY; col = '94,196,168'; }
+        ctx.fillStyle = 'rgba(' + col + ',' + (p.alpha * (outPhase > 0 ? 1.15 : 1)) + ')';
+        ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill();
+      }
+      var g = ctx.createRadialGradient(hubX, hubY, 0, hubX, hubY, 90);
+      g.addColorStop(0, 'rgba(94,196,168,0.10)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(hubX - 90, hubY - 90, 180, 180);
+    }
+    function vignette(){
+      var g = ctx.createRadialGradient(w/2, h/2, w*0.2, w/2, h/2, w*0.75);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(14,17,16,0.55)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    var start = performance.now();
+    function frame(now){
+      var t = (now - start) / 1000;
+      ctx.fillStyle = '#0e1110';
+      ctx.fillRect(0, 0, w, h);
+      drawGrid(t);
+      drawBeams(t);
+      drawRoutes();
+      vignette();
+      requestAnimationFrame(frame);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+    requestAnimationFrame(frame);
+  })();
+  </script>
+  <script>
     (function () {
-      var nav = document.querySelector('.nav');
+      var nav = document.getElementById('nav');
       if (!nav) return;
       var onScroll = function () {
         nav.classList.toggle('is-stuck', window.scrollY > 8);
