@@ -31,10 +31,6 @@ func main() {
 			"CODEBUDDY_PROXY_API_KEY":         key,
 			"CODEBUDDY_PROXY_REQUIRE_API_KEY": "true",
 		}
-		if strings.TrimSpace(cfg.AdminPassword) == "" {
-			values["CODEBUDDY_PROXY_ADMIN_PASSWORD"] = key
-			cfg.AdminPassword = key
-		}
 		if err := config.UpsertEnvFile(envPath, values); err != nil {
 			logger.Error("failed to persist default api key", "path", envPath, "error", err)
 			os.Exit(1)

@@ -24,7 +24,8 @@
 4. 复制页面上的 Base URL + API Key 填到 ZCode / NewAPI
 
 > 首次启动若没有 Key，程序会自动生成 `cbp_...` 并写入 `.env`。  
-> 管理台「生成 API Key」也会写入 `.env`；旧 Key 立即失效，客户端必须同步更换。
+> 管理台「生成 API Key」也会写入 `.env`；旧 Key 立即失效，客户端必须同步更换。  
+> 管理台密码可留空（免密）；`/v1` 仍建议开着 API Key。
 
 ## Linux / macOS
 
@@ -37,7 +38,7 @@ chmod +x ./codebuddy-proxy-linux-amd64   # 或 darwin 对应文件
 
 | 变量 | 说明 |
 |------|------|
-| `CODEBUDDY_PROXY_ADMIN_PASSWORD` | 管理后台密码 |
+| `CODEBUDDY_PROXY_ADMIN_PASSWORD` | 管理后台密码；**留空=免密**（本地推荐）。API Key 仍可单独开启 |
 | `CODEBUDDY_PROXY_API_KEY` | 客户端 API Key |
 | `CODEBUDDY_PROXY_PORT` | 端口，默认 `32126` |
 | `CODEBUDDY_SITE` | `domestic` 或 `international` |
