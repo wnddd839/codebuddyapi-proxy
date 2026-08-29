@@ -90,6 +90,21 @@ font-size: clamp(2.6rem, 6.5vw, 4.2rem);
 
 ---
 
+## §3.1 可选增强：环境层（Ambient）
+
+若希望产品页更有「活」的背景、又**不**动 Go 二进制，见 **`04-product-ambient.md`**。
+
+摘要：
+
+- **只做** `docs/index.html`；管理台 / LaunchPage **不加** Canvas
+- 参考 sysc-Go 的 beams / 稀疏 glyph / 信号路由，**原生 Canvas 手写**，不搬库
+- 默认克制：grid + beams + route；glyph rain 默认关或极稀
+- 试验对照：`docs/preview-particles.html`（未合入正式页面前仅作预览）
+
+**未合入前，现网产品页仍以 §0「减法已完成」为准，本段不 blocker。**
+
+---
+
 ## §4 与产品页统一（两页必须同源）
 
 用户从产品页点进管理台时，不应感觉换了网站。强制执行：

@@ -10,6 +10,7 @@
 | 网络 | 主要在国内 | **禁止任何 Web Font CDN** |
 | 部署 | 单文件 HTML（Go 反引号字符串内） | 见下方「硬约束」 |
 | 产品 | Go 反代网关，OAuth + 账号池 | 信息密度 > 装饰 |
+| 环境层 | 仅 GitHub Pages 静态 HTML | **不**增加 Go 二进制体积 |
 
 ## 当前状态
 
@@ -44,17 +45,22 @@
 ### H5 · 外部资源自包含
 除 `.svg` 图标外不引入任何外部请求。SVG 一律 inline 或 data-URI。
 
+### H6 · 不搬终端动画库
+参考 sysc-Go / sysc-greet 的**视觉语法**可以；**禁止**引入 sysc-Go、npm 粒子库或 WebGL 引擎。产品页若做环境层，见 `04-product-ambient.md`（原生 Canvas + 内联 JS）。
+
 ## 执行顺序（有依赖，不可乱序）
 
 ```
-01-admin-console.md   ← 第一步。确立 token，是后续的输入
+01-admin-console.md      ← 第一步。确立 token，是后续的输入
         ↓
-02-landing-page.md    ← 第二步。消费 01 的 token
+02-landing-page.md       ← 第二步。消费 01 的 token
         ↓
-03-dom-contract.md    ← 全程对照，做完后跑验收
+04-product-ambient.md    ← 可选。产品页环境层（Canvas），不影响 Go 二进制
+        ↓
+03-dom-contract.md       ← 全程对照，做完后跑验收
 ```
 
-**理由**：产品页与管理台的 token 必须同源。反序会导致产品页定完色板后管理台还得返工。
+**理由**：产品页与管理台的 token 必须同源。环境层（04）只改 `docs/index.html`，**禁止**写入 `page.go`。反序会导致产品页定完色板后管理台还得返工。
 
 ## 通用验收（每份规格都适用）
 

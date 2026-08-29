@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CodeBuddy Proxy · Particle Preview (test)</title>
+  <!-- 试验稿 · 规格见 design/04-product-ambient.md · 未合入 index.html -->
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="./logo.svg" type="image/svg+xml" />
+  <style>
+    /* 沿用现有 dark instrument token，叠加 sysc-Go 启发的「环境层」 */
+    :root {
+      --bg: #0e1110;
+      --bg-elev: rgba(22, 27, 25, 0.72);
+      --ink: #f2efe6;
+      --muted: #9aa39a;
+      --line: rgba(242, 239, 230, 0.1);
+      --accent: #e88a4a;
+      --teal: #5ec4a8;
+      --eldritch: #7b68c4;
+      --max: 1080px;
+      --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", Georgia, serif;
+      --sans: "Inter", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    /* 全屏粒子画布 —— sysc beams / matrix / 信号路由 的 Web 翻译 */
+    #ambient {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      width: min(100% - 2rem, var(--max));
+      margin-inline: auto;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 1rem 0;
+      background: color-mix(in srgb, var(--bg) 65%, transparent);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid transparent;
+      transition: border-color .25s;
+    }
+    .nav.is-stuck { border-bottom-color: var(--line); }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: .65rem;
+      font-weight: 600;
+      letter-spacing: -.02em;
+    }
+    .brand img { width: 28px; height: 28px; }
+    .badge {
+      font-size: .68rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--eldritch);
+      border: 1px solid color-mix(in srgb, var(--eldritch) 35%, transparent);
+      padding: .25rem .55rem;
+      border-radius: 4px;
+    }
+
+    .hero {
+      min-height: min(88vh, 920px);
+      display: grid;
+      align-items: end;
+      padding: 4rem 0 3.5rem;
+    }
+
+    /* 玻璃面板：内容浮在粒子之上，避免「固定盒子」感 */
+    .hero-panel {
+      max-width: 42rem;
+      padding: 2rem 2.1rem 2.2rem;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(145deg, rgba(22,27,25,.82), rgba(14,17,16,.55));
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,.03) inset,
+        0 24px 80px rgba(0,0,0,.45);
+      backdrop-filter: blur(8px);
+    }
+
+    .kicker {
+      font-size: .72rem;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: .85rem;
+      opacity: .9;
+    }
+    .hero h1 {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: clamp(2.4rem, 6vw, 3.8rem);
+      line-height: 1.06;
+      letter-spacing: -.03em;
+      margin-bottom: 1rem;
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .hero-lead {
+      color: var(--muted);
+      font-size: clamp(1rem, 2vw, 1.12rem);
+      margin-bottom: 1.6rem;
+      max-width: 34rem;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: .65rem; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      padding: .82rem 1.15rem;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: .9rem;
+      transition: transform .2s, box-shadow .2s, background .2s;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-solid {
+      background: var(--ink);
+      color: var(--bg);
+      box-shadow: 0 0 24px rgba(232,138,74,.25);
+    }
+    .btn-line {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.03);
+    }
+
+    /* 右侧「信号路由」示意 —— 对应 logo 语义 + sysc beams */
+    .hero-aside {
+      position: absolute;
+      right: max(1rem, calc(50% - 540px));
+      top: 50%;
+      transform: translateY(-42%);
+      width: min(340px, 38vw);
+      aspect-ratio: 1;
+      opacity: .85;
+      display: none;
+    }
+    @media (min-width: 980px) { .hero-aside { display: block; } }
+
+    section {
+      padding: 4.5rem 0;
+      border-top: 1px solid var(--line);
+    }
+    .title {
+      font-family: var(--display);
+      font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+      letter-spacing: -.03em;
+      margin-bottom: .65rem;
+    }
+    .desc { color: var(--muted); max-width: 36rem; margin-bottom: 2rem; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .card {
+      padding: 1.4rem 1.35rem;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(6px);
+      transition: background .25s;
+    }
+    .card:hover { background: rgba(255,255,255,.02); }
+    .card h3 {
+      font-size: .95rem;
+      margin-bottom: .45rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .card h3::before {
+      content: "";
+      width: 12px;
+      height: 2px;
+      background: var(--teal);
+      opacity: .75;
+    }
+    .card p { color: var(--muted); font-size: .88rem; line-height: 1.6; }
+
+    .research {
+      margin-top: 3rem;
+      padding: 1.25rem 1.35rem;
+      border-left: 3px solid var(--eldritch);
+      background: rgba(123,104,196,.08);
+      border-radius: 0 12px 12px 0;
+      font-size: .88rem;
+      color: var(--muted);
+      max-width: 52rem;
+    }
+    .research strong { color: var(--ink); }
+    .research code {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: .82em;
+      color: var(--teal);
+    }
+
+    .controls {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+      max-width: min(92vw, 420px);
+    }
+    .controls button {
+      font: inherit;
+      font-size: .72rem;
+      padding: .4rem .65rem;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: rgba(14,17,16,.85);
+      color: var(--muted);
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+    }
+    .controls button.is-on {
+      color: var(--ink);
+      border-color: color-mix(in srgb, var(--teal) 50%, transparent);
+      box-shadow: 0 0 12px rgba(94,196,168,.15);
+    }
+
+    @media (max-width: 840px) {
+      .cards { grid-template-columns: 1fr; }
+      .hero-panel { padding: 1.5rem 1.35rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #ambient { display: none; }
+      .hero-panel { backdrop-filter: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="ambient" aria-hidden="true"></canvas>
+  <svg class="hero-aside" viewBox="0 0 256 256" aria-hidden="true">
+    <defs>
+      <linearGradient id="inG" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#F2A065"/>
+        <stop offset="1" stop-color="#E86F3A"/>
+      </linearGradient>
+    </defs>
+    <rect width="256" height="256" rx="58" fill="#0E1110" fill-opacity=".35"/>
+    <g fill="none" stroke-width="16" stroke-linecap="round">
+      <path d="M50 84 122 128 50 172" stroke="url(#inG)" opacity=".9"/>
+      <path d="M122 128h84" stroke="#5EC4A8" opacity=".9"/>
+    </g>
+  </svg>
+
+  <header class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#">
+        <img src="./logo.svg" alt="" width="28" height="28" />
+        CodeBuddy Proxy
+      </a>
+      <span class="badge">particle preview</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero wrap">
+      <div class="hero-panel">
+        <p class="kicker">sysc-Go inspired · signal routing</p>
+        <h1>协议进，<em>/v1</em> 出</h1>
+        <p class="hero-lead">
+          测试页：把 sysc-greet 背景的「光束 / 矩阵雨 / 信号汇聚」翻译成 Web 粒子层。
+          内容仍可读，容器不再像一块死板的卡片。
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-solid" href="https://github.com/wnddd839/codebuddyapi-proxy/releases/latest">下载 Release</a>
+          <a class="btn btn-line" href="./index.html">回到正式产品页</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <h2 class="title">从 sysc-Go 借什么，不借什么</h2>
+      <p class="desc">sysc-Go 是终端 TUI 动画库（火焰、矩阵、光束、水族箱等）。Web 产品页应借「氛围语法」，而非 1:1 复刻 ASCII。</p>
+      <div class="cards">
+        <article class="card">
+          <h3>借 · 光束 Beams</h3>
+          <p>斜向柔光 + 缓慢漂移，给 hero 深度。对应 sysc <code>-effect beams</code> 的「体积感」。</p>
+        </article>
+        <article class="card">
+          <h3>借 · 信号路由</h3>
+          <p>两股珊瑚色粒子汇入薄荷色主流 —— 与 logo「多路进 / 单路出」同构，比纯装饰矩阵更贴产品。</p>
+        </article>
+        <article class="card">
+          <h3>借 · 稀疏 glyph 雨</h3>
+          <p>极低透明度 falling chars，致敬 matrix 但不抢正文。密度远低于 TUI，避免「黑客屏保」廉价感。</p>
+        </article>
+      </div>
+
+      <div class="research">
+        <strong>调研摘要：</strong>
+        <code>sysc-Go</code>（Nomadcxx，~143★）是 sysc-greet 登录器的 Go 动画库，纯 Go、可嵌入 TUI 或 CLI（<code>syscgo -effect matrix -theme eldritch</code>）。
+        Eldritch 主题为深底 + 青绿/紫调；我们保留现有 <code>#0e1110 / #e88a4a / #5ec4a8</code>，仅微量引入紫作 accent。
+        实现建议：Canvas 背景层 + CSS 玻璃内容层；<code>prefers-reduced-motion</code> 时关动画；移动端降粒子数。
+      </div>
+    </section>
+  </main>
+
+  <div class="controls" role="group" aria-label="粒子层开关">
+    <button type="button" data-layer="beams" class="is-on">beams</button>
+    <button type="button" data-layer="route" class="is-on">route</button>
+    <button type="button" data-layer="glyph" class="is-on">glyph rain</button>
+    <button type="button" data-layer="grid" class="is-on">grid</button>
+  </div>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById('ambient');
+      const nav = document.getElementById('nav');
+      const layers = { beams: true, route: true, glyph: true, grid: true };
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced) return;
+
+      const ctx = canvas.getContext('2d');
+      let w = 0, h = 0, dpr = 1;
+      const glyphs = '01/auto/v1/oauth/token/cache/proxy/→/←/·'.split('');
+      let beams = [], routes = [], drops = [];
+
+      function resize() {
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        w = window.innerWidth;
+        h = window.innerHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        init();
+      }
+
+      function init() {
+        const nBeams = Math.min(8, Math.floor(w / 220));
+        beams = Array.from({ length: nBeams }, (_, i) => ({
+          x: (i / nBeams) * w + Math.random() * 80,
+          angle: -0.35 + Math.random() * 0.15,
+          width: 40 + Math.random() * 90,
+          speed: 0.08 + Math.random() * 0.12,
+          phase: Math.random() * Math.PI * 2,
+          hue: i % 3 === 0 ? 'teal' : 'accent',
+        }));
+
+        const nRoute = Math.min(120, Math.floor(w * h / 12000));
+        routes = Array.from({ length: nRoute }, () => {
+          const side = Math.random() < 0.5 ? 'left' : 'right';
+          return {
+            side,
+            t: Math.random(),
+            speed: 0.002 + Math.random() * 0.004,
+            size: 1 + Math.random() * 1.5,
+            alpha: 0.15 + Math.random() * 0.35,
+          };
+        });
+
+        const nDrop = Math.min(48, Math.floor(w / 28));
+        drops = Array.from({ length: nDrop }, () => ({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          speed: 0.4 + Math.random() * 1.2,
+          char: glyphs[Math.floor(Math.random() * glyphs.length)],
+          alpha: 0.04 + Math.random() * 0.08,
+        }));
+      }
+
+      function drawGrid(t) {
+        if (!layers.grid) return;
+        const spacing = 72;
+        const off = (t * 0.012) % spacing;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(242,239,230,0.035)';
+        ctx.lineWidth = 1;
+        for (let x = -spacing; x < w + spacing; x += spacing) {
+          ctx.beginPath();
+          ctx.moveTo(x + off, 0);
+          ctx.lineTo(x + off, h);
+          ctx.stroke();
+        }
+        for (let y = -spacing; y < h + spacing; y += spacing) {
+          ctx.beginPath();
+          ctx.moveTo(0, y + off * 0.6);
+          ctx.lineTo(w, y + off * 0.6);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawBeams(t) {
+        if (!layers.beams) return;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const b of beams) {
+          const pulse = 0.55 + 0.45 * Math.sin(t * b.speed + b.phase);
+          const len = h * 1.2;
+          const cx = b.x + Math.sin(t * 0.05 + b.phase) * 30;
+          const color = b.hue === 'teal'
+            ? `rgba(94,196,168,${0.04 * pulse})`
+            : `rgba(232,138,74,${0.05 * pulse})`;
+          ctx.save();
+          ctx.translate(cx, -40);
+          ctx.rotate(b.angle);
+          const grd = ctx.createLinearGradient(0, 0, 0, len);
+          grd.addColorStop(0, 'rgba(0,0,0,0)');
+          grd.addColorStop(0.35, color);
+          grd.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = grd;
+          ctx.fillRect(-b.width / 2, 0, b.width, len);
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      function drawRoutes(t) {
+        if (!layers.route) return;
+        const hubX = w * 0.62;
+        const hubY = h * 0.42;
+        for (const p of routes) {
+          p.t += p.speed;
+          if (p.t > 1) {
+            p.t = 0;
+            p.side = Math.random() < 0.5 ? 'left' : 'right';
+          }
+          const startX = p.side === 'left' ? w * 0.08 : w * 0.92;
+          const startY = p.side === 'left' ? h * 0.28 : h * 0.72;
+          const midX = hubX + (p.side === 'left' ? -40 : 40);
+          const midY = hubY;
+          const tt = p.t;
+          const x = (1-tt)*(1-tt)*startX + 2*(1-tt)*tt*midX + tt*tt*hubX;
+          const y = (1-tt)*(1-tt)*startY + 2*(1-tt)*tt*midY + tt*tt*hubY;
+          const outPhase = Math.max(0, (tt - 0.72) / 0.28);
+          let px = x, py = y, col = p.side === 'left' ? '232,138,74' : '232,138,74';
+          if (outPhase > 0) {
+            px = hubX + outPhase * (w * 0.22);
+            py = hubY;
+            col = '94,196,168';
+          }
+          ctx.fillStyle = `rgba(${col},${p.alpha * (outPhase > 0 ? 1.2 : 1)})`;
+          ctx.beginPath();
+          ctx.arc(px, py, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // hub glow
+        const g = ctx.createRadialGradient(hubX, hubY, 0, hubX, hubY, 90);
+        g.addColorStop(0, 'rgba(94,196,168,0.12)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(hubX - 90, hubY - 90, 180, 180);
+      }
+
+      function drawGlyphs() {
+        if (!layers.glyph) return;
+        ctx.font = '12px ui-monospace, Consolas, monospace';
+        ctx.textAlign = 'center';
+        for (const d of drops) {
+          d.y += d.speed;
+          if (d.y > h + 20) {
+            d.y = -20;
+            d.x = Math.random() * w;
+            d.char = glyphs[Math.floor(Math.random() * glyphs.length)];
+          }
+          ctx.fillStyle = `rgba(154,163,154,${d.alpha})`;
+          ctx.fillText(d.char, d.x, d.y);
+        }
+      }
+
+      function vignette() {
+        const g = ctx.createRadialGradient(w/2, h/2, w*0.2, w/2, h/2, w*0.75);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, 'rgba(14,17,16,0.55)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      let start = performance.now();
+      function frame(now) {
+        const t = (now - start) / 1000;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#0e1110';
+        ctx.fillRect(0, 0, w, h);
+        drawGrid(t);
+        drawBeams(t);
+        drawRoutes(t);
+        drawGlyphs();
+        vignette();
+        requestAnimationFrame(frame);
+      }
+
+      document.querySelectorAll('.controls button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.layer;
+          layers[key] = !layers[key];
+          btn.classList.toggle('is-on', layers[key]);
+        });
+      });
+
+      window.addEventListener('scroll', () => {
+        nav.classList.toggle('is-stuck', window.scrollY > 8);
+      }, { passive: true });
+
+      window.addEventListener('resize', resize);
+      resize();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
