@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -80,6 +78,7 @@ type Service struct {
 		result    models.ListResult
 		expiresAt time.Time
 	}
+	modelsFlight modelsFlight
 }
 
 func New(cfg config.Config, logger *slog.Logger) *Service {
@@ -396,26 +395,39 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 			return cached, nil
 		}
 	}
-	listed := s.Models.List(ctx, s.Provider, models.ListOptions{
-		Site:                site,
-		BaseURL:             baseURL,
-		InternetEnvironment: internet,
-		BearerToken:         account.BearerToken,
-		UserID:              account.AuthStatus.UserID,
-		EnterpriseID:        account.EnterpriseID,
-		TenantID:            account.TenantID,
-		DepartmentFullName:  account.DepartmentFullName,
-		APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
-		ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Config().ChatCompletionsPath),
+
+	listed, err, _ := s.modelsFlight.Do(cacheKey, func() (models.ListResult, error) {
+		if !fresh {
+			s.modelsCacheMu.Lock()
+			hit := s.modelsCache.key == cacheKey && time.Now().Before(s.modelsCache.expiresAt)
+			cached := s.modelsCache.result
+			s.modelsCacheMu.Unlock()
+			if hit && len(cached.Models) > 0 {
+				return cached, nil
+			}
+		}
+		out := s.Models.List(ctx, s.Provider, models.ListOptions{
+			Site:                site,
+			BaseURL:             baseURL,
+			InternetEnvironment: internet,
+			BearerToken:         account.BearerToken,
+			UserID:              account.AuthStatus.UserID,
+			EnterpriseID:        account.EnterpriseID,
+			TenantID:            account.TenantID,
+			DepartmentFullName:  account.DepartmentFullName,
+			APIEndpoint:         strings.TrimSpace(account.APIEndpoint),
+			ChatCompletionsPath: strutil.First(account.ChatCompletionsPath, s.Config().ChatCompletionsPath),
+		})
+		if out.OK && len(out.Models) > 0 {
+			s.modelsCacheMu.Lock()
+			s.modelsCache.key = cacheKey
+			s.modelsCache.result = out
+			s.modelsCache.expiresAt = time.Now().Add(modelsCacheTTL)
+			s.modelsCacheMu.Unlock()
+		}
+		return out, nil
 	})
-	if listed.OK && len(listed.Models) > 0 {
-		s.modelsCacheMu.Lock()
-		s.modelsCache.key = cacheKey
-		s.modelsCache.result = listed
-		s.modelsCache.expiresAt = time.Now().Add(modelsCacheTTL)
-		s.modelsCacheMu.Unlock()
-	}
-	return listed, nil
+	return listed, err
 }
 
 func (s *Service) invalidateModelsCache() {
@@ -544,7 +556,7 @@ func (s *Service) BeginRequest(model string, promptChars int, stream bool) func(
 			s.stats.LastError = ""
 		} else {
 			s.stats.FailedRequests++
-			s.stats.LastError = truncate(errMsg, 400)
+			s.stats.LastError = strutil.Truncate(errMsg, 400)
 		}
 	}
 }
@@ -565,8 +577,8 @@ func (s *Service) resetOAuthSessionLocked(site, label, publicOrigin string) {
 		s.oauth = &OAuthSession{}
 	}
 	*s.oauth = emptyOAuthSession()
-	s.oauth.ID = fmt.Sprintf("%d-%s", time.Now().UnixMilli(), randomHex(4))
-	s.oauth.Token = randomHex(16)
+	s.oauth.ID = fmt.Sprintf("%d-%s", time.Now().UnixMilli(), strutil.RandomHex(4))
+	s.oauth.Token = strutil.RandomHex(16)
 	s.oauth.Status = "starting"
 	s.oauth.Site = config.NormalizeSite(strutil.First(site, s.Config().Site, "global"))
 	s.oauth.Label = strutil.First(label, "CodeBuddy OAuth")
@@ -727,17 +739,4 @@ func oauthMessage(session OAuthSession) string {
 	default:
 		return "尚未开始 CodeBuddy OAuth 登录。"
 	}
-}
-
-func randomHex(n int) string {
-	buf := make([]byte, n)
-	_, _ = rand.Read(buf)
-	return hex.EncodeToString(buf)
-}
-
-func truncate(value string, n int) string {
-	if len(value) <= n {
-		return value
-	}
-	return value[:n]
 }

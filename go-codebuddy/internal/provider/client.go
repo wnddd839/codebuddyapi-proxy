@@ -5,13 +5,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -264,23 +262,6 @@ func NormalizeToolChoice(value any) any {
 	return nil
 }
 
-func stainlessOS() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "Windows"
-	case "darwin":
-		return "MacOS"
-	default:
-		return "Linux"
-	}
-}
-
-func randomHex(n int) string {
-	buf := make([]byte, n)
-	_, _ = rand.Read(buf)
-	return hex.EncodeToString(buf)
-}
-
 func randomUUID() string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)
@@ -290,8 +271,8 @@ func randomUUID() string {
 }
 
 func (c *Client) BuildProtocolDirectHeaders(opts ChatOptions) http.Header {
-	requestID := randomHex(16)
-	messageID := randomHex(16)
+	requestID := strutil.RandomHex(16)
+	messageID := strutil.RandomHex(16)
 	ideVersion := strutil.First(c.IDEVersion, config.DefaultIDEVersion)
 	headers := http.Header{}
 	headers.Set("Accept", "text/event-stream, application/json")
@@ -592,7 +573,7 @@ func MapSSEEvent(payload any) []Event {
 	case "tool_call", "tool_use":
 		return []Event{{
 			Type:   "tool_use",
-			ID:     strutil.First(fmt.Sprint(obj["toolCallId"]), fmt.Sprint(obj["tool_call_id"]), fmt.Sprint(obj["id"]), "call_"+randomHex(8)),
+			ID:     strutil.First(fmt.Sprint(obj["toolCallId"]), fmt.Sprint(obj["tool_call_id"]), fmt.Sprint(obj["id"]), "call_"+strutil.RandomHex(8)),
 			Name:   strutil.First(fmt.Sprint(obj["name"]), fmt.Sprint(obj["title"]), fmt.Sprint(obj["toolName"]), fmt.Sprint(obj["tool"])),
 			Input:  normalizeToolInput(obj["rawInput"], obj["input"], obj["arguments"], obj["args"]),
 			Source: "codebuddy_sse",
@@ -653,39 +634,6 @@ func mapOpenAIDelta(payload map[string]any) []Event {
 	return events
 }
 
-func mapOpenAIMessage(payload map[string]any) []Event {
-	choices, _ := payload["choices"].([]any)
-	if len(choices) == 0 {
-		return nil
-	}
-	choice, _ := choices[0].(map[string]any)
-	message, _ := choice["message"].(map[string]any)
-	if message == nil {
-		message, _ = choice["delta"].(map[string]any)
-	}
-	events := make([]Event, 0, 2)
-	if text := firstText(message["content"], message["text"], payload["output_text"]); text != "" {
-		events = append(events, Event{Type: "text_delta", Text: text, Source: "codebuddy_openai"})
-	}
-	if toolCalls, ok := message["tool_calls"].([]any); ok {
-		for _, raw := range toolCalls {
-			tc, _ := raw.(map[string]any)
-			fn, _ := tc["function"].(map[string]any)
-			events = append(events, Event{
-				Type:   "tool_use",
-				ID:     strutil.First(fmt.Sprint(tc["id"]), "call_"+randomHex(8)),
-				Name:   fmt.Sprint(fn["name"]),
-				Input:  normalizeToolInput(fn["arguments"]),
-				Source: "codebuddy_openai",
-			})
-		}
-	}
-	if finish := strutil.First(fmt.Sprint(choice["finish_reason"]), fmt.Sprint(choice["finishReason"])); finish != "" && finish != "<nil>" {
-		events = append(events, Event{Type: "turn_ended", StopReason: finish, Source: "codebuddy_openai"})
-	}
-	return events
-}
-
 type accumulator struct {
 	text       string
 	thinking   string
@@ -709,7 +657,7 @@ func (a *accumulator) push(event Event) {
 		a.thinking += event.Text
 	case "tool_use":
 		a.toolUses = append(a.toolUses, ToolUse{
-			ID:     strutil.First(event.ID, "toolu_"+randomHex(8)),
+			ID:     strutil.First(event.ID, "toolu_"+strutil.RandomHex(8)),
 			Name:   event.Name,
 			Input:  event.Input,
 			Source: event.Source,
@@ -766,7 +714,7 @@ func (a *accumulator) snapshot(prompt string) Turn {
 			}
 		}
 		tools = append(tools, ToolUse{
-			ID:     strutil.First(frag.ID, "toolu_"+randomHex(8)),
+			ID:     strutil.First(frag.ID, "toolu_"+strutil.RandomHex(8)),
 			Name:   frag.Name,
 			Input:  input,
 			Source: "provider_delta",
@@ -1088,9 +1036,4 @@ func truthy(value any) bool {
 	default:
 		return false
 	}
-}
-
-func payloadBytes(value any) []byte {
-	raw, _ := json.Marshal(value)
-	return raw
 }

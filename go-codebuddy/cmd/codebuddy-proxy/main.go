@@ -12,6 +12,7 @@ import (
 	"github.com/wnddd839/codebuddy-proxy/internal/config"
 	"github.com/wnddd839/codebuddy-proxy/internal/gateway"
 	"github.com/wnddd839/codebuddy-proxy/internal/server"
+	"github.com/wnddd839/codebuddy-proxy/internal/strutil"
 )
 
 func main() {
@@ -51,7 +52,7 @@ func main() {
 		"transport", cfg.Transport,
 		"accountsPath", cfg.AccountsPath,
 		"requireApiKey", cfg.RequireAPIKey,
-		"apiKeyPreview", maskKey(cfg.APIKey),
+		"apiKeyPreview", strutil.MaskSecret(cfg.APIKey, 6),
 	)
 
 	errCh := make(chan error, 1)
@@ -77,15 +78,4 @@ func main() {
 			os.Exit(1)
 		}
 	}
-}
-
-func maskKey(value string) string {
-	text := strings.TrimSpace(value)
-	if text == "" {
-		return ""
-	}
-	if len(text) <= 12 {
-		return text[:min(4, len(text))] + "..."
-	}
-	return text[:6] + "..." + text[len(text)-4:]
 }

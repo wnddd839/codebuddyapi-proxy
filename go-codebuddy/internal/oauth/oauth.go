@@ -3,9 +3,7 @@ package oauth
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -81,7 +79,7 @@ type PollResult struct {
 
 func (c *Client) Start(ctx context.Context, site string) (StartResult, error) {
 	baseURL := provider.NormalizeBaseURL(ResolvePluginBaseURL(site))
-	nonce := randomHex(8)
+	nonce := strutil.RandomHex(8)
 	authState, authURL, err := c.requestAuthState(ctx, baseURL, nonce)
 	if err != nil {
 		return StartResult{}, err
@@ -89,7 +87,7 @@ func (c *Client) Start(ctx context.Context, site string) (StartResult, error) {
 	c.mu.Lock()
 	if c.lastPluginState != "" && authState == c.lastPluginState {
 		c.mu.Unlock()
-		retryNonce := randomHex(8)
+		retryNonce := strutil.RandomHex(8)
 		retryState, retryURL, retryErr := c.requestAuthState(ctx, baseURL, retryNonce)
 		if retryErr == nil && retryState != "" && retryState != authState {
 			authState, authURL = retryState, retryURL
@@ -126,7 +124,7 @@ func (c *Client) requestAuthState(ctx context.Context, baseURL, nonce string) (s
 	payload, _ := readJSON(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := json.Marshal(payload)
-		return "", "", fmt.Errorf("CodeBuddy auth/state failed with %d: %s", resp.StatusCode, truncate(string(raw), 200))
+		return "", "", fmt.Errorf("CodeBuddy auth/state failed with %d: %s", resp.StatusCode, strutil.Truncate(string(raw), 200))
 	}
 	code, _ := payload["code"].(float64)
 	data, _ := payload["data"].(map[string]any)
@@ -220,11 +218,11 @@ func (c *Client) Refresh(ctx context.Context, opts RefreshOptions) (*TokenData, 
 	code, _ := payload["code"].(float64)
 	if (resp.StatusCode < 200 || resp.StatusCode >= 300) || (token == nil && code != 0) {
 		msg := strutil.First(fmt.Sprint(payload["error_description"]), fmt.Sprint(payload["error"]), fmt.Sprint(payload["msg"]), fmt.Sprint(payload["message"]), fmt.Sprintf("HTTP %d", resp.StatusCode))
-		return nil, fmt.Errorf("CodeBuddy token refresh failed with %d: %s", resp.StatusCode, truncate(msg, 200))
+		return nil, fmt.Errorf("CodeBuddy token refresh failed with %d: %s", resp.StatusCode, strutil.Truncate(msg, 200))
 	}
 	if token == nil || token.BearerToken == "" {
 		msg := strutil.First(fmt.Sprint(payload["msg"]), fmt.Sprint(payload["message"]), "no access token")
-		return nil, fmt.Errorf("CodeBuddy token refresh returned no access token: %s", truncate(msg, 200))
+		return nil, fmt.Errorf("CodeBuddy token refresh returned no access token: %s", strutil.Truncate(msg, 200))
 	}
 	if token.RefreshToken == "" {
 		token.RefreshToken = refreshToken
@@ -316,7 +314,7 @@ func DecodeJWT(token string) map[string]any {
 
 func buildStartHeaders(baseURL string) http.Header {
 	domain := hostOf(baseURL)
-	requestID := randomHex(16)
+	requestID := strutil.RandomHex(16)
 	h := http.Header{}
 	h.Set("Accept", "application/json, text/plain, */*")
 	h.Set("Content-Type", "application/json")
@@ -337,8 +335,8 @@ func buildStartHeaders(baseURL string) http.Header {
 
 func buildPollHeaders(baseURL string) http.Header {
 	domain := hostOf(baseURL)
-	requestID := randomHex(16)
-	spanID := randomHex(4)
+	requestID := strutil.RandomHex(16)
+	spanID := strutil.RandomHex(4)
 	h := http.Header{}
 	h.Set("Accept", "application/json, text/plain, */*")
 	h.Set("Cache-Control", "no-cache")
@@ -363,8 +361,8 @@ func buildPollHeaders(baseURL string) http.Header {
 
 func buildRefreshHeaders(endpoint, accessToken, refreshToken string) http.Header {
 	domain := hostOf(endpoint)
-	requestID := randomHex(16)
-	spanID := randomHex(4)
+	requestID := strutil.RandomHex(16)
+	spanID := strutil.RandomHex(4)
 	h := http.Header{}
 	h.Set("Accept", "application/json, text/plain, */*")
 	h.Set("Content-Type", "application/json")
@@ -481,12 +479,6 @@ func hostOf(raw string) string {
 	return u.Host
 }
 
-func randomHex(n int) string {
-	buf := make([]byte, n)
-	_, _ = rand.Read(buf)
-	return hex.EncodeToString(buf)
-}
-
 func asInt64(value any) (int64, bool) {
 	switch v := value.(type) {
 	case float64:
@@ -510,11 +502,4 @@ func asInt64Default(values ...any) int64 {
 		}
 	}
 	return 0
-}
-
-func truncate(value string, n int) string {
-	if len(value) <= n {
-		return value
-	}
-	return value[:n]
 }

@@ -32,3 +32,20 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("path=%q", cfg.ChatCompletionsPath)
 	}
 }
+
+func TestNormalizeSite(t *testing.T) {
+	cases := map[string]string{
+		"":              "global",
+		"global":        "global",
+		"international": "global",
+		"domestic":      "domestic",
+		"CN":            "domestic",
+		"china":         "domestic",
+		"internal":      "domestic",
+	}
+	for in, want := range cases {
+		if got := config.NormalizeSite(in); got != want {
+			t.Fatalf("NormalizeSite(%q)=%q want %q", in, got, want)
+		}
+	}
+}

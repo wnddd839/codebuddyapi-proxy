@@ -209,13 +209,13 @@ func NormalizeAccount(raw Account, now int64) Account {
 	}
 	auth := AuthStatus{
 		LoggedIn:     raw.AuthStatus.LoggedIn,
-		UserID:       compact(raw.AuthStatus.UserID),
-		UserName:     compact(raw.AuthStatus.UserName),
-		UserNickname: compact(raw.AuthStatus.UserNickname),
-		AuthMode:     compact(raw.AuthStatus.AuthMode),
+		UserID:       strutil.Compact(raw.AuthStatus.UserID),
+		UserName:     strutil.Compact(raw.AuthStatus.UserName),
+		UserNickname: strutil.Compact(raw.AuthStatus.UserNickname),
+		AuthMode:     strutil.Compact(raw.AuthStatus.AuthMode),
 	}
-	bearer := compact(raw.BearerToken)
-	apiKey := compact(raw.APIKey)
+	bearer := strutil.Compact(raw.BearerToken)
+	apiKey := strutil.Compact(raw.APIKey)
 	authType := ""
 	switch {
 	case bearer != "":
@@ -223,12 +223,12 @@ func NormalizeAccount(raw Account, now int64) Account {
 	case apiKey != "":
 		authType = "api_key"
 	}
-	credHash := compact(raw.CredentialHash)
+	credHash := strutil.Compact(raw.CredentialHash)
 	if credHash == "" {
 		credHash = hashSecret(bearer + apiKey)
 	}
 	identity := strutil.First(auth.UserID, auth.UserName, raw.Label)
-	id := compact(raw.ID)
+	id := strutil.Compact(raw.ID)
 	if id == "" {
 		id = hashSecret(fmt.Sprintf("%s|%s|%s|%s", identity, credHash, baseURL, site))
 	}
@@ -240,7 +240,7 @@ func NormalizeAccount(raw Account, now int64) Account {
 	if updated == 0 {
 		updated = now
 	}
-	label := compact(raw.Label)
+	label := strutil.Compact(raw.Label)
 	if label == "" {
 		label = strutil.First(auth.UserName, auth.UserID, "CodeBuddy "+id[:min(6, len(id))])
 	}
@@ -248,7 +248,7 @@ func NormalizeAccount(raw Account, now int64) Account {
 	if !raw.enabledSet && raw.ID == "" && raw.CreatedAt == 0 {
 		enabled = true
 	}
-	transport := compact(raw.Transport)
+	transport := strutil.Compact(raw.Transport)
 	if transport == "" {
 		transport = config.DefaultTransport
 	}
@@ -266,17 +266,17 @@ func NormalizeAccount(raw Account, now int64) Account {
 		Site:                site,
 		BaseURL:             baseURL,
 		InternetEnvironment: internet,
-		APIEndpoint:         strings.TrimRight(compact(raw.APIEndpoint), "/"),
-		ChatCompletionsPath: compact(raw.ChatCompletionsPath),
-		Domain:              compact(raw.Domain),
-		EnterpriseID:        compact(raw.EnterpriseID),
-		TenantID:            strutil.First(compact(raw.TenantID), compact(raw.EnterpriseID)),
-		DepartmentFullName:  compact(raw.DepartmentFullName),
+		APIEndpoint:         strings.TrimRight(strutil.Compact(raw.APIEndpoint), "/"),
+		ChatCompletionsPath: strutil.Compact(raw.ChatCompletionsPath),
+		Domain:              strutil.Compact(raw.Domain),
+		EnterpriseID:        strutil.Compact(raw.EnterpriseID),
+		TenantID:            strutil.First(strutil.Compact(raw.TenantID), strutil.Compact(raw.EnterpriseID)),
+		DepartmentFullName:  strutil.Compact(raw.DepartmentFullName),
 		Transport:           transport,
 		AuthType:            authType,
 		APIKey:              apiKey,
 		BearerToken:         bearer,
-		RefreshToken:        compact(raw.RefreshToken),
+		RefreshToken:        strutil.Compact(raw.RefreshToken),
 		TokenExpiresAt:      expiresAt,
 		CredentialHash:      credHash,
 		AuthStatus:          auth,
@@ -286,7 +286,7 @@ func NormalizeAccount(raw Account, now int64) Account {
 		LastSelectedAt:      raw.LastSelectedAt,
 		SuccessRequests:     raw.SuccessRequests,
 		FailedRequests:      raw.FailedRequests,
-		LastError:           compact(raw.LastError),
+		LastError:           strutil.Compact(raw.LastError),
 	}
 	return account
 }
@@ -309,7 +309,7 @@ func CreateAccount(raw Account) Account {
 }
 
 func HasCredentials(account Account) bool {
-	return compact(account.BearerToken) != "" || compact(account.APIKey) != ""
+	return strutil.Compact(account.BearerToken) != "" || strutil.Compact(account.APIKey) != ""
 }
 
 func (p *Pool) Select(opts SelectOptions) (Selection, error) {
@@ -402,7 +402,7 @@ func (p *Pool) MarkResult(selection Selection, ok bool, errMsg string) error {
 			store.Accounts[i].LastError = ""
 		} else {
 			store.Accounts[i].FailedRequests++
-			store.Accounts[i].LastError = truncate(errMsg, 600)
+			store.Accounts[i].LastError = strutil.Truncate(errMsg, 600)
 		}
 		break
 	}
@@ -574,9 +574,9 @@ func SummarizeAccount(account Account) Summary {
 		UserName:            account.AuthStatus.UserName,
 		UserNickname:        account.AuthStatus.UserNickname,
 		AuthMode:            account.AuthStatus.AuthMode,
-		BearerTokenPreview:  maskSecret(account.BearerToken, 6),
-		RefreshTokenPreview: maskSecret(account.RefreshToken, 4),
-		APIKeyPreview:       maskSecret(account.APIKey, 6),
+		BearerTokenPreview:  strutil.MaskSecret(account.BearerToken, 6),
+		RefreshTokenPreview: strutil.MaskSecret(account.RefreshToken, 4),
+		APIKeyPreview:       strutil.MaskSecret(account.APIKey, 6),
 		CreatedAt:           account.CreatedAt,
 		UpdatedAt:           account.UpdatedAt,
 		LastUsedAt:          account.LastUsedAt,
@@ -684,41 +684,18 @@ func SummarizeStoreForSite(store Store, path, preferredSite string) StoreSummary
 }
 
 func inferSite(raw Account) string {
-	env := strings.ToLower(compact(raw.InternetEnvironment))
+	env := strings.ToLower(strutil.Compact(raw.InternetEnvironment))
 	if env == "internal" {
 		return "domestic"
 	}
-	url := strings.ToLower(compact(raw.BaseURL))
+	url := strings.ToLower(strutil.Compact(raw.BaseURL))
 	if strings.Contains(url, "codebuddy.cn") || strings.Contains(url, "copilot.tencent.com") {
 		return "domestic"
 	}
 	return config.NormalizeSite(raw.Site)
 }
 
-func compact(value string) string { return strings.TrimSpace(value) }
-
 func hashSecret(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])[:16]
-}
-
-func maskSecret(value string, visible int) string {
-	text := compact(value)
-	if text == "" {
-		return ""
-	}
-	if len(text) <= visible*2 {
-		if visible > len(text) {
-			visible = max(1, len(text))
-		}
-		return text[:visible] + "..."
-	}
-	return text[:visible] + "..." + text[len(text)-visible:]
-}
-
-func truncate(value string, n int) string {
-	if len(value) <= n {
-		return value
-	}
-	return value[:n]
 }

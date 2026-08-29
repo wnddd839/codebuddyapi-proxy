@@ -8,6 +8,14 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### 第二 / 第三梯队（代码卫生 + 测试）
+- 删除 staticcheck U1000 死代码 4 处：`stainlessOS` / `mapOpenAIMessage` / `payloadBytes` / `Server.handle`。
+- `NormalizeSite` 去掉恒为 global 的空串死分支。
+- `/v1/models` 缓存 miss 用本地 singleflight 合并并发回源（无新依赖）。
+- `server` 补 HTTP 层单测：API Key / 管理台免密与 BasicAuth / CSRF 同源接线。
+- 重复工具收敛到 `strutil`：`Truncate` / `RandomHex` / `MaskSecret` / `Compact`。
+- `oauth` / `billing` 补纯函数单测（URL、ShouldRefresh、JWT、用量汇总、通知码）。
+
 ### 二进制改走 GitHub Releases
 - 仓库不再跟踪 `go-codebuddy/releases/codebuddy-proxy-*` 预编译包（约 30MB）。
 - 二进制通过 `gh release` 发布到 GitHub Releases；Git 只保留源码与 `releases/README.md` / `.env.example`。
