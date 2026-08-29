@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -124,7 +125,7 @@ func (s *Server) authorizeAPI(w http.ResponseWriter, r *http.Request) bool {
 	if token == "" {
 		token = strings.TrimSpace(r.Header.Get("X-API-Key"))
 	}
-	if token == "" || token != cfg.APIKey {
+	if token == "" || !secretEqual(token, cfg.APIKey) {
 		httputil.WriteJSON(w, http.StatusUnauthorized, openai.NewError("Missing or invalid API key", "authentication_error"))
 		return false
 	}
@@ -137,19 +138,22 @@ func (s *Server) authorizeAdmin(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	user, pass, ok := r.BasicAuth()
-	if ok && pass == cfg.AdminPassword && (user == "" || user == "admin") {
+	if ok && secretEqual(pass, cfg.AdminPassword) && (user == "" || user == "admin") {
 		return true
 	}
 	token := httputil.BearerToken(r)
-	if token != "" && (token == cfg.AdminPassword || token == cfg.APIKey) {
+	if token != "" && (secretEqual(token, cfg.AdminPassword) || secretEqual(token, cfg.APIKey)) {
 		return true
 	}
-	if q := strings.TrimSpace(r.URL.Query().Get("password")); q != "" && q == cfg.AdminPassword {
-		return true
-	}
+	// Intentionally no ?password= query auth: secrets in URLs leak into proxy logs,
+	// browser history, and Referer. Use Basic Auth or Bearer instead.
 	w.Header().Set("WWW-Authenticate", `Basic realm="CodeBuddy Admin"`)
 	httputil.WriteJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "admin auth required"})
 	return false
+}
+
+func secretEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,4 @@
-.PHONY: build test run tidy clean release release-checksums
+.PHONY: build test test-race fmt vet check run tidy clean release release-checksums
 
 VERSION ?= dev
 LDFLAGS := -s -w
@@ -8,6 +8,17 @@ build:
 
 test:
 	go test ./...
+
+test-race:
+	go test -race ./...
+
+fmt:
+	gofmt -w $$(find . -name '*.go' -not -path './bin/*')
+
+vet:
+	go vet ./...
+
+check: fmt vet test-race
 
 run:
 	go run ./cmd/codebuddy-proxy

@@ -97,11 +97,3 @@ func NormalizePath(path string) string {
 	}
 	return path
 }
-
-func CookieValue(r *http.Request, name string) string {
-	c, err := r.Cookie(name)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(c.Value)
-}

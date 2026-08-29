@@ -113,6 +113,25 @@ func TestAdminPasswordRequiredWhenConfigured(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("authed status=%d body=%s", rec.Code, rec.Body.String())
 	}
+
+	// Bearer admin password also works.
+	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32126/direct-admin/api/status", nil)
+	req.Header.Set("Authorization", "Bearer admin-pass")
+	rec = httptest.NewRecorder()
+	srv.HTTP.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bearer status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminRejectsPasswordQueryParam(t *testing.T) {
+	srv := testServer(t, false, "admin-pass", "")
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32126/direct-admin/api/status?password=admin-pass", nil)
+	rec := httptest.NewRecorder()
+	srv.HTTP.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("query password must be rejected, got %d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestHealth(t *testing.T) {

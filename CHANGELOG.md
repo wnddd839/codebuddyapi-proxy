@@ -8,6 +8,14 @@
 
 ## 2026-08-29 · 审计硬化 + 体验收口
 
+### 工程卫生：鉴权 / CI / gofmt
+- 删除管理台 `?password=` URL query 认证路径（防日志 / 历史 / Referer 泄露）。
+- 管理台 / API Key 比对改为 `crypto/subtle.ConstantTimeCompare`。
+- 删除无调用方的 `httputil.CookieValue`。
+- 新增 GitHub Actions CI：`gofmt` + `go vet` + `go test -race`。
+- `gofmt -w` 消化 CRLF 存量；Makefile 增加 `fmt` / `vet` / `test-race` / `check`。
+- 增加 `SECURITY.md` 漏洞报告说明。
+
 ### 第二 / 第三梯队（代码卫生 + 测试）
 - 删除 staticcheck U1000 死代码 4 处：`stainlessOS` / `mapOpenAIMessage` / `payloadBytes` / `Server.handle`。
 - `NormalizeSite` 去掉恒为 global 的空串死分支。
