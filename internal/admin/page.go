@@ -253,7 +253,7 @@ pre{
       <div class="panel-inner">
         <div class="eyebrow">Gateway Console</div>
         <h1>账号、模型与网关状态</h1>
-        <p class="lede">聚焦 OAuth 接入、账号池与请求健康。配色面向未来 GEO 站点宣发，可直接沿用品牌主色。</p>
+        <p class="lede">监控 OAuth 登录、账号池状态与请求健康度。</p>
         <div class="metrics">
           <div class="metric"><div class="k">登录态</div><div class="v sm" id="mLogin">未登录</div></div>
           <div class="metric"><div class="k">Credits 余额</div><div class="v sm" id="mCredits">—</div></div>
@@ -404,7 +404,6 @@ pre{
     </section>
   </div>
 
-  <p class="footer-note">Brand palette · sand / teal / coral · ready for GEO landing reuse</p>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
