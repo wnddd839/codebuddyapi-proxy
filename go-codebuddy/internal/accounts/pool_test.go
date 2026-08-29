@@ -67,3 +67,24 @@ func TestPoolRoundTripSelectAndMark(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSummarizeStoreForSitePrefersActiveRegion(t *testing.T) {
+	store := accounts.EmptyStore()
+	store.Accounts = []accounts.Account{
+		accounts.CreateAccount(accounts.Account{Label: "cn", Site: "domestic", BearerToken: "cn-token", Enabled: true}),
+		accounts.CreateAccount(accounts.Account{Label: "us", Site: "global", BearerToken: "us-token", Enabled: true}),
+	}
+	summary := accounts.SummarizeStoreForSite(store, "mem", "global")
+	if summary.ActiveSite != "global" {
+		t.Fatalf("activeSite=%q", summary.ActiveSite)
+	}
+	if summary.DomesticCount != 1 || summary.GlobalCount != 1 {
+		t.Fatalf("counts domestic=%d global=%d", summary.DomesticCount, summary.GlobalCount)
+	}
+	if summary.Primary == nil || summary.Primary.Site != "global" {
+		t.Fatalf("primary=%+v", summary.Primary)
+	}
+	if summary.ActiveEnabledCount != 1 {
+		t.Fatalf("activeEnabled=%d", summary.ActiveEnabledCount)
+	}
+}

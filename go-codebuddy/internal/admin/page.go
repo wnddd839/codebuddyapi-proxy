@@ -177,6 +177,11 @@ select:focus,input:focus{border-color:rgba(15,124,116,.45);box-shadow:0 0 0 4px 
   font-size:11px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--muted);
 }
 .badge.site{color:var(--teal-deep);background:rgba(15,124,116,.08);border-color:rgba(15,124,116,.16)}
+.badge.muted{color:var(--ink-soft);background:rgba(47,53,48,.05);border-color:rgba(47,53,48,.1)}
+.seg{display:inline-flex;gap:6px;padding:4px;border-radius:999px;background:rgba(47,53,48,.04);border:1px solid rgba(47,53,48,.08)}
+.seg button{border:0;background:transparent;color:var(--ink-soft);padding:8px 14px;border-radius:999px;cursor:pointer;font:inherit}
+.seg button.active{background:var(--teal);color:#fff;box-shadow:0 8px 18px rgba(15,124,116,.18)}
+.seg-hint{margin:8px 0 0;color:var(--ink-soft);font-size:12px}
 .badge.on{color:var(--ok);background:rgba(31,138,91,.08);border-color:rgba(31,138,91,.18)}
 .badge.off{color:var(--bad);background:rgba(201,68,68,.08);border-color:rgba(201,68,68,.16)}
 .meta{color:var(--muted);font-size:13px;line-height:1.5}
@@ -356,9 +361,16 @@ pre{
         <div class="section-head">
           <div>
             <h2>账号池</h2>
-            <p>启用、刷新 Token 或移除账号。</p>
+            <p>一键切换国内 / 国际号池；请求只会使用当前区域账号。</p>
+          </div>
+          <div class="actions">
+            <div class="seg" id="poolSiteSeg" role="group" aria-label="号池区域">
+              <button type="button" data-site="domestic" id="btnPoolDomestic">国内</button>
+              <button type="button" data-site="global" id="btnPoolGlobal">国际</button>
+            </div>
           </div>
         </div>
+        <p class="seg-hint" id="poolSiteHint">当前号池：—</p>
         <div id="accounts"></div>
       </div>
     </section>
@@ -443,9 +455,10 @@ function setHealth(ok, text){
 }
 
 const usageByAccount = {};
-function renderAccounts(summary) {
+function renderAccounts(summary, activeSite) {
   const box = $('accounts');
   const accounts = (summary && summary.accounts) || [];
+  activeSite = normalizeSite(activeSite || (summary && summary.activeSite) || '');
   if (!accounts.length) {
     box.innerHTML = '<div class="empty">暂无账号。请先在右侧完成 OAuth 登录。</div>';
     return;
@@ -454,6 +467,8 @@ function renderAccounts(summary) {
     const name = escapeHtml(a.userNickname || a.userName || a.userId || '未命名用户');
     const label = escapeHtml(a.label || a.id);
     const logged = a.loggedIn && a.hasCredentials;
+    const site = normalizeSite(a.site);
+    const inPool = !activeSite || site === activeSite;
     const usage = usageByAccount[a.id];
     let usageHtml = '<div class="usage-line"><button class="ghost" data-act="usage" data-id="' + escapeHtml(a.id) + '" type="button">查余额</button></div>';
     if (usage && usage.error) {
@@ -479,7 +494,8 @@ function renderAccounts(summary) {
       '<div class="account-top">' +
         '<div class="account-title">' +
           '<strong>' + label + '</strong>' +
-          '<span class="badge site">' + escapeHtml(a.site||'') + '</span>' +
+          '<span class="badge site">' + escapeHtml(siteLabel(site)) + '</span>' +
+          '<span class="badge ' + (inPool?'on':'muted') + '">' + (inPool?'当前号池':'其他区域') + '</span>' +
           '<span class="badge ' + (logged?'on':'off') + '">' + (logged?'已登录':'未登录') + '</span>' +
           '<span class="badge ' + (a.enabled?'on':'off') + '">' + (a.enabled?'enabled':'disabled') + '</span>' +
         '</div>' +
@@ -527,6 +543,38 @@ function renderModels(data){
   });
 }
 
+
+function normalizeSite(site){
+  site = String(site||'').toLowerCase().trim();
+  if (site === 'domestic' || site === 'cn' || site === 'china' || site === 'internal') return 'domestic';
+  return 'global';
+}
+function siteLabel(site){
+  return normalizeSite(site) === 'domestic' ? '国内' : '国际';
+}
+function paintPoolSite(site, accounts){
+  site = normalizeSite(site);
+  const domesticBtn = $('btnPoolDomestic');
+  const globalBtn = $('btnPoolGlobal');
+  if (domesticBtn) domesticBtn.className = site === 'domestic' ? 'active' : '';
+  if (globalBtn) globalBtn.className = site === 'global' ? 'active' : '';
+  const domestic = accounts && accounts.domesticCount != null ? accounts.domesticCount : '—';
+  const global = accounts && accounts.globalCount != null ? accounts.globalCount : '—';
+  const activeEnabled = accounts && accounts.activeEnabledCount != null ? accounts.activeEnabledCount : '—';
+  if ($('poolSiteHint')) {
+    $('poolSiteHint').textContent = '当前号池：' + siteLabel(site) + ' · 可用启用账号 ' + activeEnabled + ' · 国内账号 ' + domestic + ' / 国际账号 ' + global + '（仅当前区域会参与请求）';
+  }
+}
+async function switchPoolSite(site){
+  site = normalizeSite(site);
+  const data = await api('/direct-admin/api/pool-site', {method:'POST', body: JSON.stringify({site: site})});
+  paintStatus(data);
+  if (data.note) showToast(data.note);
+  // Refresh models for the new region primary account.
+  refreshModels().catch(function(){});
+  return data;
+}
+
 function paintStatus(data){
   const stats = data.stats || {};
   const accounts = data.accounts || {};
@@ -540,8 +588,16 @@ function paintStatus(data){
     ? ('已登录' + (primary && (primary.userNickname || primary.userName || primary.userId) ? (' · ' + (primary.userNickname || primary.userName || primary.userId)) : ''))
     : '未登录';
   $('pillTransport').textContent = data.transport || 'protocol_direct';
-  $('pillSite').textContent = cfg.site || '—';
-  setHealth(!!data.ok, data.ok ? (loggedIn ? '服务正常 · 已登录' : '服务正常 · 未登录') : '状态异常');
+  const poolSite = normalizeSite(data.poolSite || cfg.poolSite || cfg.site || 'global');
+  $('pillSite').textContent = siteLabel(poolSite);
+  paintPoolSite(poolSite, accounts);
+  // Keep OAuth login site aligned with active pool by default.
+  if ($('site') && !$('site').dataset.userTouched) {
+    $('site').value = poolSite === 'domestic' ? 'domestic' : 'global';
+  }
+  const activeEnabled = accounts.activeEnabledCount != null ? accounts.activeEnabledCount : enabledCount;
+  $('mEnabled').textContent = String(activeEnabled);
+  setHealth(!!data.ok, data.ok ? (loggedIn ? ('服务正常 · ' + siteLabel(poolSite) + '号池') : ('服务正常 · ' + siteLabel(poolSite) + '号池未登录')) : '状态异常');
   // Auto-fetch balance for primary account once.
   if (primary && primary.id && primary.hasCredentials && !usageByAccount[primary.id] && !paintStatus._usageKick) {
     paintStatus._usageKick = true;
@@ -559,7 +615,7 @@ function paintStatus(data){
   const raw = JSON.stringify(data, null, 2);
   $('statusBox').textContent = raw;
   $('statusRaw').textContent = raw;
-  renderAccounts(accounts);
+  renderAccounts(accounts, poolSite);
 }
 
 function paintOAuth(data){
@@ -705,6 +761,9 @@ async function onAccountAction(ev){
   await refreshStatus();
 }
 
+if ($('btnPoolDomestic')) $('btnPoolDomestic').onclick = function(){ switchPoolSite('domestic').catch(function(e){ showToast(e.message, 'error'); }); };
+if ($('btnPoolGlobal')) $('btnPoolGlobal').onclick = function(){ switchPoolSite('global').catch(function(e){ showToast(e.message, 'error'); }); };
+if ($('site')) $('site').addEventListener('change', function(){ $('site').dataset.userTouched = '1'; });
 $('btnRefresh').onclick = function(){ refreshStatus().catch(function(e){ $('statusRaw').textContent = e.message; setHealth(false, '刷新失败'); }); };
 $('btnModels').onclick = function(){ refreshModels().catch(function(e){ $('modelsRaw').textContent = e.message; $('modelChips').innerHTML = '<div class="empty">' + escapeHtml(e.message) + '</div>'; }); };
 $('btnStart').onclick = function(){ startOAuth().catch(function(e){ $('oauthMsg').textContent = e.message; $('oauthRaw').textContent = e.message; }); };

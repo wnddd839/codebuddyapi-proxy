@@ -202,6 +202,9 @@ func UpsertEnvFile(path string, values map[string]string) error {
 		"CODEBUDDY_PROXY_API_KEY",
 		"CODEBUDDY_PROXY_ADMIN_PASSWORD",
 		"CODEBUDDY_PROXY_REQUIRE_API_KEY",
+		"CODEBUDDY_SITE",
+		"CODEBUDDY_BASE_URL",
+		"CODEBUDDY_INTERNET_ENVIRONMENT",
 	}
 	for _, key := range ordered {
 		if _, ok := seen[key]; ok {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -167,10 +168,11 @@ type CompleteResult struct {
 }
 
 func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (CompleteResult, error) {
-	// Do not filter the pool by proxy-wide CODEBUDDY_SITE. The selected account's
-	// own site decides domestic vs global upstream, independent of proxy IP/VPN.
+	// Active pool site (admin one-click switch) restricts which accounts may be used.
+	// The selected account still decides domestic vs global upstream endpoints.
 	selection, err := s.Pool.Select(accounts.SelectOptions{
 		AccountID:  opts.AccountID,
+		Site:       s.ActivePoolSite(),
 		ExcludeIDs: opts.ExcludeIDs,
 	})
 	if err != nil {
@@ -304,14 +306,15 @@ func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult
 	if err != nil {
 		return models.ListResult{}, err
 	}
-	summary := accounts.SummarizeStore(store, s.Pool.Path())
-	if summary.Primary == nil || !summary.Primary.HasCredentials {
+	activeSite := s.ActivePoolSite()
+	summary := accounts.SummarizeStoreForSite(store, s.Pool.Path(), activeSite)
+	if summary.Primary == nil || !summary.Primary.HasCredentials || config.NormalizeSite(summary.Primary.Site) != activeSite {
 		return models.ListResult{
 			OK:           false,
-			Site:         config.NormalizeSite(s.Cfg.Site),
+			Site:         activeSite,
 			Models:       models.ToAdminModels([]map[string]any{{"id": "auto", "name": "Auto"}}, "fallback"),
 			ModelsSource: "no_credentials",
-			Message:      "Complete CodeBuddy OAuth login before listing models.",
+			Message:      "当前号池区域(" + activeSite + ")没有可用账号，请先 OAuth 登录该区域或切换号池。",
 		}, nil
 	}
 	var account accounts.Account
@@ -357,28 +360,82 @@ func (s *Service) ConfiguredModels() []models.Model {
 	return out
 }
 
+func (s *Service) ActivePoolSite() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return config.NormalizeSite(s.Cfg.Site)
+}
+
+func (s *Service) SetPoolSite(site string) (map[string]any, error) {
+	site = config.NormalizeSite(site)
+	baseURL := "https://www.codebuddy.ai"
+	internet := ""
+	if site == "domestic" {
+		baseURL = "https://www.codebuddy.cn"
+		internet = "internal"
+	}
+
+	envPath := config.ResolveEnvFilePath()
+	values := map[string]string{
+		"CODEBUDDY_SITE":                 site,
+		"CODEBUDDY_BASE_URL":             baseURL,
+		"CODEBUDDY_INTERNET_ENVIRONMENT": internet,
+	}
+	if err := config.UpsertEnvFile(envPath, values); err != nil {
+		return nil, fmt.Errorf("persist pool site failed: %w", err)
+	}
+
+	s.mu.Lock()
+	s.Cfg.Site = site
+	s.Cfg.BaseURL = baseURL
+	s.Cfg.InternetEnvironment = internet
+	s.mu.Unlock()
+	_ = os.Setenv("CODEBUDDY_SITE", site)
+	_ = os.Setenv("CODEBUDDY_BASE_URL", baseURL)
+	_ = os.Setenv("CODEBUDDY_INTERNET_ENVIRONMENT", internet)
+
+	s.Log.Info("pool site switched", "site", site, "baseUrl", baseURL, "envFile", envPath)
+	payload := s.Status()
+	payload["ok"] = true
+	payload["switched"] = true
+	payload["envFile"] = envPath
+	payload["note"] = "号池已切换到 " + site + "，后续请求只使用该区域账号。"
+	return payload, nil
+}
+
 func (s *Service) Status() map[string]any {
 	s.mu.Lock()
 	stats := s.stats
+	site := config.NormalizeSite(s.Cfg.Site)
+	baseURL := s.Cfg.BaseURL
+	internet := s.Cfg.InternetEnvironment
+	host := s.Cfg.Host
+	port := s.Cfg.Port
+	requireKey := s.Cfg.RequireAPIKey
+	accountsPath := s.Cfg.AccountsPath
+	chatPath := s.Cfg.ChatCompletionsPath
+	transport := s.Cfg.Transport
 	s.mu.Unlock()
 	store, _ := s.Pool.Read()
-	summary := accounts.SummarizeStore(store, s.Pool.Path())
+	summary := accounts.SummarizeStoreForSite(store, s.Pool.Path(), site)
 	return map[string]any{
 		"ok":        true,
 		"provider":  "codebuddy",
-		"transport": s.Cfg.Transport,
+		"transport": transport,
 		"uptimeMs":  time.Since(s.Started).Milliseconds(),
 		"stats":     stats,
 		"accounts":  summary,
+		"poolSite":  site,
 		"config": map[string]any{
-			"host":                s.Cfg.Host,
-			"port":                s.Cfg.Port,
-			"requireApiKey":       s.Cfg.RequireAPIKey,
-			"site":                s.Cfg.Site,
-			"baseUrl":             s.Cfg.BaseURL,
-			"internetEnvironment": s.Cfg.InternetEnvironment,
-			"accountsPath":        s.Cfg.AccountsPath,
-			"chatCompletionsPath": s.Cfg.ChatCompletionsPath,
+			"host":                host,
+			"port":                port,
+			"requireApiKey":       requireKey,
+			"site":                site,
+			"poolSite":            site,
+			"baseUrl":             baseURL,
+			"internetEnvironment": internet,
+			"accountsPath":        accountsPath,
+			"chatCompletionsPath": chatPath,
 		},
 	}
 }

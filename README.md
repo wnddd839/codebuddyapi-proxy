@@ -101,6 +101,8 @@ CODEBUDDY_PROXY_REQUIRE_API_KEY=true
 
 打开管理台 → OAuth 登录 CodeBuddy → 复制 API Key 到客户端 → 开始调用。
 
+管理台「账号池」可一键切换 **国内 / 国际** 号池：切换后只请求该区域账号，并写入 `.env`（`CODEBUDDY_SITE`）。
+
 ---
 
 ## 接入
