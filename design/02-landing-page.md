@@ -99,7 +99,7 @@ font-size: clamp(2.6rem, 6.5vw, 4.2rem);
 - **只做** `docs/index.html`；管理台 / LaunchPage **不加** Canvas
 - 参考 sysc-Go 的 beams / 稀疏 glyph / 信号路由，**原生 Canvas 手写**，不搬库
 - 默认克制：grid + beams + route；glyph rain 默认关或极稀
-- 试验对照：`docs/preview-particles.html`（未合入正式页面前仅作预览）
+- 试验对照：已随之删除；氛围层已合入 `docs/index.html`，对照稿可从 Git 历史取回
 
 **未合入前，现网产品页仍以 §0「减法已完成」为准，本段不 blocker。**
 

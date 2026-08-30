@@ -6,7 +6,7 @@
 **参考来源**：sysc-Go / sysc-greet 的终端动画**视觉语法**（beams、稀疏 glyph 雨、信号汇聚）。  
 **禁止**：引入 sysc-Go、任何 npm/CDN 动画库、WebGL 重型引擎、位图字体 `.bit`。
 
-**试验稿**：`docs/preview-particles.html`（对照用，合入正式页面前需过 §6 验收）。
+**试验稿**：已从 `docs/` 移除（氛围层已合入正式页面）；需要对照时从 Git 历史取回 `docs/preview-particles.html`。
 
 ---
 
@@ -129,7 +129,7 @@ wc -c docs/index.html
 2. `prefers-reduced-motion` —— Canvas 隐藏，纯 CSS 可读  
 3. 1366×768 —— hero 标题 + lead + CTA 无滚动可见  
 4. 去色截图 —— 层级仍清晰（结构不依赖颜色）  
-5. 与 `preview-particles.html` 并排 —— 正式版密度 **≤ preview**，更克制  
+5. 与对照稿并排 —— 正式版密度 **≤ preview**，更克制（对照稿见 Git 历史中的 `docs/preview-particles.html`）  
 
 ---
 
