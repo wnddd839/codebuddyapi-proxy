@@ -904,13 +904,18 @@ func ParseUsage(raw map[string]any) Usage {
 		TotalTokens:              intFrom(raw["total_tokens"]),
 		CacheReadInputTokens:     intFrom(raw["cache_read_input_tokens"]),
 		CacheCreationInputTokens: intFrom(raw["cache_creation_input_tokens"]),
-		PromptCacheHitTokens:     intFrom(raw["prompt_cache_hit_tokens"]),
+		PromptCacheHitTokens:     intFrom(raw["prompt_cache_hit_tokens"], raw["cached_tokens"]),
 		PromptCacheMissTokens:    intFrom(raw["prompt_cache_miss_tokens"]),
 	}
-	if details, ok := raw["prompt_tokens_details"].(map[string]any); ok && details != nil {
-		cached := intFrom(details["cached_tokens"], details["cache_read_input_tokens"])
+	for _, key := range []string{"prompt_tokens_details", "input_tokens_details"} {
+		details, ok := raw[key].(map[string]any)
+		if !ok || details == nil {
+			continue
+		}
+		cached := intFrom(details["cached_tokens"], details["cache_read_input_tokens"], details["cache_hit_tokens"])
 		if cached > 0 {
 			usage.PromptTokensDetails = &PromptTokensDetails{CachedTokens: cached}
+			break
 		}
 	}
 	if details, ok := raw["completion_tokens_details"].(map[string]any); ok && details != nil {

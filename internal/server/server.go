@@ -416,6 +416,7 @@ func (s *Server) streamChat(
 		_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{}, &finishReason))
 		// OpenAI stream_options.include_usage 风格：收尾 chunk 带 usage、choices 为空。
 		_ = sse.WriteEvent(openai.StreamUsageChunk(id, providerModel.PublicModel, openai.UsageFromProvider(result.Turn.Usage)))
+		_ = sse.Flush() // 确保 usage 在 [DONE] 前落到客户端，避免下游提前断开丢统计
 		_ = sse.WriteDone()
 		done = true
 	})

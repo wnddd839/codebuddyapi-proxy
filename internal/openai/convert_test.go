@@ -18,6 +18,12 @@ func TestUsageFromProviderPreservesCache(t *testing.T) {
 	if u.PromptTokensDetails == nil || u.PromptTokensDetails.CachedTokens != 70 {
 		t.Fatalf("%+v", u)
 	}
+	if u.PromptCacheHitTokens != 70 || u.CacheReadInputTokens != 70 {
+		t.Fatalf("aliases not filled: hit=%d read=%d", u.PromptCacheHitTokens, u.CacheReadInputTokens)
+	}
+	if u.PromptCacheMissTokens != 30 {
+		t.Fatalf("miss=%d want 30", u.PromptCacheMissTokens)
+	}
 	raw, err := json.Marshal(u)
 	if err != nil {
 		t.Fatal(err)
@@ -25,6 +31,26 @@ func TestUsageFromProviderPreservesCache(t *testing.T) {
 	s := string(raw)
 	if !contains(s, `"cached_tokens":70`) || !contains(s, `"prompt_tokens":100`) {
 		t.Fatalf("json=%s", s)
+	}
+	if !contains(s, `"prompt_cache_hit_tokens":70`) || !contains(s, `"cache_read_input_tokens":70`) {
+		t.Fatalf("missing aliases json=%s", s)
+	}
+}
+
+func TestUsageFromProviderFillsAliasesFromHitOnly(t *testing.T) {
+	u := UsageFromProvider(provider.Usage{
+		PromptTokens:         200,
+		CompletionTokens:     10,
+		TotalTokens:          210,
+		PromptCacheHitTokens: 150,
+	})
+	raw, _ := json.Marshal(u)
+	s := string(raw)
+	if !contains(s, `"cached_tokens":150`) || !contains(s, `"prompt_cache_hit_tokens":150`) || !contains(s, `"cache_read_input_tokens":150`) {
+		t.Fatalf("json=%s", s)
+	}
+	if !contains(s, `"prompt_cache_miss_tokens":50`) {
+		t.Fatalf("miss not derived json=%s", s)
 	}
 }
 
