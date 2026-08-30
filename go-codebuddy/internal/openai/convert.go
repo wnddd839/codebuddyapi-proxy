@@ -140,16 +140,26 @@ func UsageFromProvider(u provider.Usage) Usage {
 		PromptCacheMissTokens:    u.PromptCacheMissTokens,
 		Source:                   u.Source,
 	}
-	if u.PromptTokensDetails != nil && u.PromptTokensDetails.CachedTokens > 0 {
-		out.PromptTokensDetails = &PromptTokensDetails{CachedTokens: u.PromptTokensDetails.CachedTokens}
-	} else if cached := u.CachedTokens(); cached > 0 {
-		out.PromptTokensDetails = &PromptTokensDetails{CachedTokens: cached}
-	}
 	if u.CompletionTokensDetails != nil && u.CompletionTokensDetails.ReasoningTokens > 0 {
 		out.CompletionTokensDetails = &CompletionTokensDetails{ReasoningTokens: u.CompletionTokensDetails.ReasoningTokens}
 	}
 	if out.TotalTokens == 0 {
 		out.TotalTokens = out.PromptTokens + out.CompletionTokens
+	}
+	// 出站补齐常用 cache 别名，避免 CCSwitch / DeepSeek / Anthropic
+	// 转换器只认其中一种字段时丢掉命中率。
+	cached := u.CachedTokens()
+	if cached > 0 {
+		out.PromptTokensDetails = &PromptTokensDetails{CachedTokens: cached}
+		if out.PromptCacheHitTokens == 0 {
+			out.PromptCacheHitTokens = cached
+		}
+		if out.CacheReadInputTokens == 0 {
+			out.CacheReadInputTokens = cached
+		}
+	}
+	if out.PromptCacheMissTokens == 0 && out.PromptTokens > cached {
+		out.PromptCacheMissTokens = out.PromptTokens - cached
 	}
 	return out
 }

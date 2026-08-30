@@ -6,6 +6,17 @@
 
 ---
 
+## v0.3.4 · 2026-08-30 · 出站 cache 字段别名补齐
+
+- **问题**：管理台能看到 `totalCachedTokens`，但 CCSwitch 等下游缓存率仍极低。
+- **核实**：流式收尾 `usage` chunk（空 choices）本身已在发送；CodeBuddy 上游多用 DeepSeek 风格 `prompt_cache_*` 字段。
+- **修复**：`UsageFromProvider` 在命中时同时写出 `prompt_tokens_details.cached_tokens` + `prompt_cache_hit_tokens` + `cache_read_input_tokens`，并推导 `prompt_cache_miss_tokens`；`ParseUsage` 兼容 `cached_tokens` / `input_tokens_details`。
+- **流式**：usage chunk 写出后显式 `Flush()`，降低下游提前断开丢统计的概率。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.4
+
+---
+
 ## v0.3.3 · 2026-08-29 · 回滚出站混合序列化（热修复）
 
 - **回滚**：删除 `MarshalStreamChunk` / `SSEMarshaler` 手写骨架路径，出站 `StreamChunk` 恢复 `json.Marshal`。

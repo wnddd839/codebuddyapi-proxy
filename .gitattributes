@@ -13,5 +13,9 @@
 *.ps1 text eol=lf
 *.sh text eol=lf
 
+# Git hooks are bash scripts with no extension; must stay LF on every platform
+# or they fail with "bad interpreter" on Linux/macOS.
+.githooks/* text eol=lf
+
 go-codebuddy/releases/codebuddy-proxy-* binary
 *.exe binary

@@ -102,6 +102,25 @@ func TestParseUsageDeepSeekAliases(t *testing.T) {
 	}
 }
 
+func TestParseUsageTopLevelAndInputDetails(t *testing.T) {
+	u1 := ParseUsage(map[string]any{
+		"prompt_tokens": float64(100),
+		"cached_tokens": float64(40),
+	})
+	if u1.CachedTokens() != 40 {
+		t.Fatalf("top-level cached=%d", u1.CachedTokens())
+	}
+	u2 := ParseUsage(map[string]any{
+		"prompt_tokens": float64(100),
+		"input_tokens_details": map[string]any{
+			"cache_hit_tokens": float64(55),
+		},
+	})
+	if u2.CachedTokens() != 55 {
+		t.Fatalf("input_tokens_details cached=%d", u2.CachedTokens())
+	}
+}
+
 func TestUsageEventFromPayload(t *testing.T) {
 	ev := usageEventFromPayload(map[string]any{
 		"usage": map[string]any{
