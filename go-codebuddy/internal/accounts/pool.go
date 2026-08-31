@@ -81,6 +81,7 @@ type Account struct {
 	SuccessRequests     int64      `json:"successRequests"`
 	FailedRequests      int64      `json:"failedRequests"`
 	LastError           string     `json:"lastError,omitempty"`
+	CooldownUntil       int64      `json:"cooldownUntil,omitempty"`
 }
 
 type Store struct {
@@ -91,10 +92,11 @@ type Store struct {
 }
 
 type Selection struct {
-	Source  string
-	Account Account
-	Index   int
-	Store   Store
+	Source           string
+	Account          Account
+	Index            int
+	Store            Store
+	BypassedCooldown bool // 全部账号冷却时降级选最快恢复者
 }
 
 type Pool struct {
@@ -424,6 +426,7 @@ func NormalizeAccount(raw Account, now int64) Account {
 		SuccessRequests:     raw.SuccessRequests,
 		FailedRequests:      raw.FailedRequests,
 		LastError:           strutil.Compact(raw.LastError),
+		CooldownUntil:       raw.CooldownUntil,
 	}
 	return account
 }
@@ -486,6 +489,10 @@ func (p *Pool) Select(opts SelectOptions) (Selection, error) {
 	for _, id := range opts.ExcludeIDs {
 		exclude[id] = struct{}{}
 	}
+	var (
+		fallbackIdx   = -1
+		fallbackUntil int64
+	)
 	for offset := 0; offset < len(store.Accounts); offset++ {
 		idx := (store.NextIndex + offset) % len(store.Accounts)
 		account := store.Accounts[idx]
@@ -498,11 +505,31 @@ func (p *Pool) Select(opts SelectOptions) (Selection, error) {
 		if _, skip := exclude[account.ID]; skip {
 			continue
 		}
+		if InCooldown(account, now) {
+			if account.CooldownUntil > 0 && (fallbackIdx < 0 || account.CooldownUntil < fallbackUntil) {
+				fallbackIdx = idx
+				fallbackUntil = account.CooldownUntil
+			}
+			continue
+		}
 		store.Accounts[idx].LastSelectedAt = now
 		store.NextIndex = (idx + 1) % len(store.Accounts)
 		p.mem = store
 		p.markDirtyLocked()
 		return Selection{Source: "pool", Account: store.Accounts[idx], Index: idx, Store: cloneStore(store)}, nil
+	}
+	if fallbackIdx >= 0 {
+		store.Accounts[fallbackIdx].LastSelectedAt = now
+		store.NextIndex = (fallbackIdx + 1) % len(store.Accounts)
+		p.mem = store
+		p.markDirtyLocked()
+		return Selection{
+			Source:           "pool",
+			Account:          store.Accounts[fallbackIdx],
+			Index:            fallbackIdx,
+			Store:            cloneStore(store),
+			BypassedCooldown: true,
+		}, nil
 	}
 	if opts.Site != "" {
 		return Selection{}, fmt.Errorf("%w for site=%s", ErrNoAccounts, config.NormalizeSite(opts.Site))
@@ -516,7 +543,12 @@ type SelectOptions struct {
 	ExcludeIDs []string
 }
 
-func (p *Pool) MarkResult(selection Selection, ok bool, errMsg string) error {
+// InCooldown reports whether the account is temporarily excluded from pool rotation.
+func InCooldown(account Account, nowMillis int64) bool {
+	return account.CooldownUntil > 0 && account.CooldownUntil > nowMillis
+}
+
+func (p *Pool) MarkResult(selection Selection, ok bool, errMsg string, cooldown time.Duration) error {
 	if selection.Source != "pool" || selection.Account.ID == "" {
 		return nil
 	}
@@ -534,9 +566,13 @@ func (p *Pool) MarkResult(selection Selection, ok bool, errMsg string) error {
 		if ok {
 			p.mem.Accounts[i].SuccessRequests++
 			p.mem.Accounts[i].LastError = ""
+			p.mem.Accounts[i].CooldownUntil = 0
 		} else {
 			p.mem.Accounts[i].FailedRequests++
 			p.mem.Accounts[i].LastError = strutil.Truncate(errMsg, 600)
+			if cooldown > 0 {
+				p.mem.Accounts[i].CooldownUntil = now + cooldown.Milliseconds()
+			}
 		}
 		p.markDirtyLocked()
 		return nil
@@ -556,13 +592,16 @@ func (p *Pool) Upsert(account Account) (Account, Store, error) {
 	for i, existing := range store.Accounts {
 		if existing.ID == normalized.ID ||
 			(normalized.CredentialHash != "" && existing.CredentialHash == normalized.CredentialHash) ||
-			(normalized.AuthStatus.UserID != "" && existing.AuthStatus.UserID == normalized.AuthStatus.UserID) {
+			(normalized.AuthStatus.UserID != "" &&
+				existing.AuthStatus.UserID == normalized.AuthStatus.UserID &&
+				config.NormalizeSite(existing.Site) == config.NormalizeSite(normalized.Site)) {
 			normalized.ID = existing.ID
 			normalized.CreatedAt = existing.CreatedAt
 			normalized.SuccessRequests = existing.SuccessRequests
 			normalized.FailedRequests = existing.FailedRequests
 			normalized.LastUsedAt = existing.LastUsedAt
 			normalized.LastSelectedAt = existing.LastSelectedAt
+			normalized.CooldownUntil = existing.CooldownUntil
 			store.Accounts[i] = normalized
 			replaced = true
 			break

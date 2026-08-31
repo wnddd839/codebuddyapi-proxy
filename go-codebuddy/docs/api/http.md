@@ -66,6 +66,46 @@ Query：
 **模型缓存**：默认 60s TTL。切换号池区域会自动失效；管理台「刷新模型」走 `fresh=true`。
 并发 cache miss 由本地 singleflight 合并，不会打爆上游 `/v3/config`。
 
+### `GET /v1/model/info`
+
+别名：`GET /model/info`
+
+供 **OpenCode `opencode-models-discovery`** 插件使用（`modelInfoFormat: "litellm"`）。
+
+Query：
+
+| 参数 | 说明 |
+|------|------|
+| `fresh` | 同 `/v1/models`，强制回源 |
+
+返回 LiteLLM enricher 形状（`data[]` 每项含 `key`、`mode`、`supports_reasoning`、`reasoning_options`、`variants` 等）：
+
+```json
+{
+  "data": [
+    {
+      "key": "glm-5.3-flash",
+      "mode": "chat",
+      "supports_reasoning": true,
+      "reasoning_options": [{"type": "effort", "values": ["low", "high"]}],
+      "variants": {"none": {"thinking": {"type": "disabled"}}, "high": {"reasoningEffort": "high"}}
+    }
+  ]
+}
+```
+
+OpenCode 配置示例：
+
+```json
+{
+  "plugin": ["opencode-models-discovery"],
+  "modelInfoFormat": "litellm",
+  "modelInfoEndpoint": "/model/info"
+}
+```
+
+> `/v1/models` 已含 `reasoning` / `variants` 等 OpenCode 字段；discovery 插件仍需本端点做 LiteLLM 形态 enrich。
+
 ### `POST /v1/chat/completions`
 
 别名：`POST /chat/completions`

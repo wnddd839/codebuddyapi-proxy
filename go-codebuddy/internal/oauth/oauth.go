@@ -277,7 +277,7 @@ func AccountFromTokenData(token *TokenData, site, label string) accounts.Account
 		TokenExpiresAt: expiresAt,
 		Domain:         strings.TrimSpace(token.Domain),
 		AuthStatus: accounts.AuthStatus{
-			LoggedIn:     &loggedIn,
+			LoggedIn:     new(loggedIn),
 			UserID:       userID,
 			UserName:     userName,
 			UserNickname: strutil.First(fmt.Sprint(claims["nickname"]), fmt.Sprint(claims["name"])),

@@ -41,6 +41,7 @@ func New(cfg config.Config, svc *gateway.Service) *Server {
 	mux.HandleFunc("GET /v1/models", s.handleModelsAuth)
 	mux.HandleFunc("GET /models", s.handleModelsAuth)
 	mux.HandleFunc("GET /v1/model/info", s.handleModelInfoAuth)
+	mux.HandleFunc("GET /model/info", s.handleModelInfoAuth)
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChatAuth)
 	mux.HandleFunc("POST /chat/completions", s.handleChatAuth)
 	mux.HandleFunc("GET /direct-admin", s.handleAdminPage)

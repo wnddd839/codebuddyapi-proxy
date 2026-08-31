@@ -13,6 +13,8 @@ Before writing or refactoring Go in this project, also apply the official JetBra
 
 - `.agents/skills/use-modern-go` (from [JetBrains/go-modern-guidelines](https://github.com/JetBrains/go-modern-guidelines))
 
+**Pi agents:** load global skill `go-codebuddy-modern` (`~/.pi/agent/skills/`) — it wraps both skills and the mandatory CLI workflow. System prompt: `.agents/pi-system-prompt-go.md`.
+
 On Windows:
 
 ```powershell

@@ -33,7 +33,7 @@ curl -fsS http://127.0.0.1:32126/health
 
 ## 日志
 
-默认 JSON `slog` 到 stdout（`INFO` 级别）。关注字段：
+默认 JSON `slog` 到 stdout（**WARN** 级别；`CODEBUDDY_PROXY_LOG_LEVEL=info|debug` 可见启动细节）。关注字段：
 
 - `codebuddy proxy starting` — 启动细节（默认 `CODEBUDDY_PROXY_LOG_LEVEL=warn` 不输出；设 `info`/`debug` 可见）
 - `generated and saved gateway api key` — 首次启动自动生成 Key（**仅 debug**，不含明文；用户看管理台）
@@ -64,6 +64,8 @@ curl -fsS http://127.0.0.1:32126/health
 ## 账号池持久化
 
 - 内存为权威，`Select` / `MarkResult` 只改内存并标 dirty
+- **冷却**：上游失败（429/5xx/11140 等）会写入账号 `cooldownUntil`，冷却期内不参与轮询；成功请求清零
+- **全冷却降级**：同区域全部冷却时仍选最快恢复账号（debug 日志），避免短时整体不可用
 - 250ms 合并异步落盘，去掉每请求多次同步 IO
 - OAuth / Upsert / Delete / Replace / SetEnabled **同步刷盘**（凭据不可丢）
 - 原子写：temp 文件 + rename，权限 `0600`

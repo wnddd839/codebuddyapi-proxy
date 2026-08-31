@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# pre-commit: fast checks on staged Go changes under go-codebuddy/
+#
+# - gofmt check (does not rewrite staged files)
+# - go test for affected packages
+#
+# Bypass: git commit --no-verify
+
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+GO_DIR="$ROOT/go-codebuddy"
+
+if [ ! -d "$GO_DIR" ]; then
+  exit 0
+fi
+
+mapfile -t STAGED_GO < <(git diff --cached --name-only --diff-filter=ACM | grep -E '^go-codebuddy/.*\.go$' || true)
+
+if [ "${#STAGED_GO[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+echo "[pre-commit] gofmt check..."
+UNFMT=()
+for f in "${STAGED_GO[@]}"; do
+  if ! gofmt -l "$ROOT/$f" | grep -q .; then
+    continue
+  fi
+  UNFMT+=("$f")
+done
+if [ "${#UNFMT[@]}" -ne 0 ]; then
+  echo "[pre-commit] gofmt required for:" "${UNFMT[@]}"
+  echo "  run: gofmt -w ${UNFMT[*]}"
+  exit 1
+fi
+
+PKGS=()
+for f in "${STAGED_GO[@]}"; do
+  rel=${f#go-codebuddy/}
+  dir=$(dirname "$rel")
+  if [ "$dir" = "." ]; then
+    PKGS+=("./...")
+    break
+  fi
+  PKGS+=("./$dir/...")
+done
+
+UNIQ_PKGS=$(printf '%s\n' "${PKGS[@]}" | sort -u)
+
+echo "[pre-commit] go test ${UNIQ_PKGS[*]}"
+(
+  cd "$GO_DIR"
+  for pkg in $UNIQ_PKGS; do
+    go test "$pkg"
+  done
+)
+
+echo "[pre-commit] OK"
