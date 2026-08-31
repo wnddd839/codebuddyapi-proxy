@@ -85,15 +85,17 @@ type Choice struct {
 }
 
 type Message struct {
-	Role      string     `json:"role"`
-	Content   any        `json:"content"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Role             string     `json:"role"`
+	Content          any        `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 }
 
 type Delta struct {
-	Role      string     `json:"role,omitempty"`
-	Content   string     `json:"content,omitempty"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Role             string     `json:"role,omitempty"`
+	Content          string     `json:"content,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 }
 
 type ToolCall struct {
@@ -197,6 +199,9 @@ func FromTurn(turn provider.Turn, id, model string) ChatCompletion {
 		content = nil
 	}
 	msg := &Message{Role: "assistant", Content: content}
+	if turn.Thinking != "" {
+		msg.ReasoningContent = turn.Thinking
+	}
 	if len(toolCalls) > 0 {
 		msg.ToolCalls = toolCalls
 	}

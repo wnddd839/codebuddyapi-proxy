@@ -63,6 +63,9 @@ type ChatOptions struct {
 	Temperature         *float64
 	TopP                *float64
 	MaxCompletionTokens int
+	ReasoningEffort     string
+	Reasoning           map[string]any
+	Thinking            map[string]any
 	BearerToken         string
 	UserID              string
 	BaseURL             string
@@ -76,6 +79,7 @@ type ChatOptions struct {
 	DepartmentFullName  string
 	ExtraHeaders        map[string]string
 	OnDelta             func(string)
+	OnThinkingDelta     func(string)
 	OnEvent             func(Event)
 }
 
@@ -261,6 +265,20 @@ func isPortalDomain(domain string) bool {
 
 // NormalizeToolChoice 将 OpenAI 风格 tool_choice 转为 CodeBuddy protocol_direct 接受的字符串。
 // 对象形式会导致上游 11101（tool_choice 类型不匹配）。
+// ApplyReasoningFields 将客户端思考档位写入上游 body。
+// 实测仅传 reasoning_effort 不会触发 reasoning_content；需 reasoning.effort。
+func ApplyReasoningFields(body map[string]any, opts ChatOptions) {
+	if opts.Reasoning != nil {
+		body["reasoning"] = opts.Reasoning
+	} else if effort := strings.TrimSpace(opts.ReasoningEffort); effort != "" {
+		body["reasoning"] = map[string]any{"effort": effort}
+		body["reasoning_effort"] = effort
+	}
+	if opts.Thinking != nil {
+		body["thinking"] = opts.Thinking
+	}
+}
+
 func NormalizeToolChoice(value any) any {
 	switch v := value.(type) {
 	case nil:
@@ -452,6 +470,7 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 	if choice := NormalizeToolChoice(opts.ToolChoice); choice != nil {
 		body["tool_choice"] = choice
 	}
+	ApplyReasoningFields(body, opts)
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, err
@@ -529,6 +548,9 @@ func (c *Client) readSSE(body io.Reader, opts ChatOptions) (Result, error) {
 					opts.OnDelta(event.Text)
 				}
 			}
+			if event.Type == "thinking_delta" && event.Text != "" && opts.OnThinkingDelta != nil {
+				opts.OnThinkingDelta(event.Text)
+			}
 		}
 	}
 	for {
@@ -577,9 +599,10 @@ type openAISSEChoice struct {
 }
 
 type openAISSEDelta struct {
-	Content   any                 `json:"content"`
-	Text      any                 `json:"text"`
-	ToolCalls []openAISSEToolCall `json:"tool_calls"`
+	Content          any                 `json:"content"`
+	Text             any                 `json:"text"`
+	ReasoningContent any                 `json:"reasoning_content"`
+	ToolCalls        []openAISSEToolCall `json:"tool_calls"`
 }
 
 type openAISSEToolCall struct {
@@ -613,6 +636,9 @@ func eventsFromOpenAIChunk(chunk openAISSEChunk) []Event {
 	if delta != nil {
 		if text := firstText(delta.Content, delta.Text); text != "" {
 			events = append(events, Event{Type: "text_delta", Text: text, Source: "codebuddy_openai"})
+		}
+		if text := firstText(delta.ReasoningContent); text != "" {
+			events = append(events, Event{Type: "thinking_delta", Text: text, Source: "codebuddy_openai"})
 		}
 		for _, tc := range delta.ToolCalls {
 			events = append(events, Event{
@@ -716,6 +742,9 @@ func mapOpenAIDelta(payload map[string]any) []Event {
 	events := make([]Event, 0, 2)
 	if text := firstText(delta["content"], delta["text"]); text != "" {
 		events = append(events, Event{Type: "text_delta", Text: text, Source: "codebuddy_openai"})
+	}
+	if text := firstText(delta["reasoning_content"], delta["reasoning"]); text != "" {
+		events = append(events, Event{Type: "thinking_delta", Text: text, Source: "codebuddy_openai"})
 	}
 	if toolCalls, ok := delta["tool_calls"].([]any); ok {
 		for _, raw := range toolCalls {
@@ -1053,6 +1082,15 @@ func NormalizeModels(input any) []map[string]any {
 			"owned_by":       strutil.First(fmt.Sprint(m["vendor"]), fmt.Sprint(m["provider"]), "codebuddy"),
 			"supportsTools":  truthy(m["supportsToolCall"]) || truthy(m["supportsTools"]),
 			"supportsImages": truthy(m["supportsImages"]) || truthy(m["supportsImage"]),
+		}
+		if truthy(m["supportsReasoning"]) {
+			item["supportsReasoning"] = true
+		}
+		if truthy(m["onlyReasoning"]) {
+			item["onlyReasoning"] = true
+		}
+		if reasoning, ok := m["reasoning"].(map[string]any); ok && len(reasoning) > 0 {
+			item["reasoning"] = reasoning
 		}
 		if credits != "" {
 			item["credits"] = credits

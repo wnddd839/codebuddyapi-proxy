@@ -190,8 +190,12 @@ type CompleteOptions struct {
 	Temperature         *float64
 	TopP                *float64
 	MaxCompletionTokens int
+	ReasoningEffort     string
+	Reasoning           map[string]any
+	Thinking            map[string]any
 	ExcludeIDs          []string
 	OnDelta             func(string)
+	OnThinkingDelta     func(string)
 	OnEvent             func(provider.Event)
 	RefreshRetry        bool
 	RetryDepth          int // 内部递归计数，调用方勿手动设置
@@ -219,6 +223,9 @@ func (s *Service) chatOptionsFromAccount(account accounts.Account, opts Complete
 		Temperature:         opts.Temperature,
 		TopP:                opts.TopP,
 		MaxCompletionTokens: opts.MaxCompletionTokens,
+		ReasoningEffort:     opts.ReasoningEffort,
+		Reasoning:           opts.Reasoning,
+		Thinking:            opts.Thinking,
 		BearerToken:         account.BearerToken,
 		UserID:              account.AuthStatus.UserID,
 		BaseURL:             baseURL,
@@ -232,6 +239,7 @@ func (s *Service) chatOptionsFromAccount(account accounts.Account, opts Complete
 		TenantID:           account.TenantID,
 		DepartmentFullName: account.DepartmentFullName,
 		OnDelta:            opts.OnDelta,
+		OnThinkingDelta:    opts.OnThinkingDelta,
 		OnEvent:            opts.OnEvent,
 	}
 }

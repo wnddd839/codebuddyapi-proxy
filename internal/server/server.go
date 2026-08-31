@@ -190,6 +190,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		if model.Description != "" {
 			item["description"] = model.Description
 		}
+		if model.SupportsReasoning {
+			item["supportsReasoning"] = true
+		}
+		if model.OnlyReasoning {
+			item["onlyReasoning"] = true
+		}
+		if len(model.Reasoning) > 0 {
+			item["reasoning"] = model.Reasoning
+		}
 		data = append(data, item)
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
@@ -206,6 +215,10 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		TopP                *float64         `json:"top_p"`
 		MaxTokens           *int             `json:"max_tokens"`
 		MaxCompletionTokens *int             `json:"max_completion_tokens"`
+		ReasoningEffort     string           `json:"reasoning_effort"`
+		ReasoningEffortAlt  string           `json:"reasoningEffort"`
+		Reasoning           map[string]any   `json:"reasoning"`
+		Thinking            map[string]any   `json:"thinking"`
 	}
 	if err := httputil.ReadJSON(r, &body); err != nil {
 		httputil.WriteJSON(w, http.StatusBadRequest, openai.NewError("Invalid JSON body", "invalid_request_error"))
@@ -220,6 +233,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	} else if body.MaxTokens != nil && *body.MaxTokens > 0 {
 		maxTokens = *body.MaxTokens
 	}
+	reasoningEffort := strutil.First(body.ReasoningEffort, body.ReasoningEffortAlt)
 	completeOpts := gateway.CompleteOptions{
 		Model:               providerModel.Model,
 		Messages:            body.Messages,
@@ -228,6 +242,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		Temperature:         body.Temperature,
 		TopP:                body.TopP,
 		MaxCompletionTokens: maxTokens,
+		ReasoningEffort:     reasoningEffort,
+		Reasoning:           body.Reasoning,
+		Thinking:            body.Thinking,
 	}
 
 	if body.Stream {
@@ -272,6 +289,7 @@ func (s *Server) streamChat(
 		done              bool
 		streamedToolCalls int
 		streamedChars     int
+		streamedThinking  int
 	)
 	writeLocked := func(fn func()) {
 		mu.Lock()
@@ -361,6 +379,16 @@ func (s *Server) streamChat(
 			_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: delta}, nil))
 		})
 	}
+	opts.OnThinkingDelta = func(delta string) {
+		if delta == "" {
+			return
+		}
+		writeLocked(func() {
+			startStream()
+			streamedThinking += len(delta)
+			_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{ReasoningContent: delta}, nil))
+		})
+	}
 	result, err := s.Svc.CompleteFromPool(ctx, opts)
 	if err != nil {
 		if openai.IsClientCanceled(err) {
@@ -393,6 +421,9 @@ func (s *Server) streamChat(
 		startStream()
 		if streamedChars == 0 && result.Turn.Text != "" {
 			_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{Content: result.Turn.Text}, nil))
+		}
+		if streamedThinking == 0 && result.Turn.Thinking != "" {
+			_ = sse.WriteEvent(openai.StreamChunkOf(id, providerModel.PublicModel, openai.Delta{ReasoningContent: result.Turn.Thinking}, nil))
 		}
 		if len(result.Turn.ToolUses) > 0 && streamedToolCalls == 0 {
 			for i, tool := range result.Turn.ToolUses {
