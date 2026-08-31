@@ -31,7 +31,8 @@ clean:
 
 release:
 	@mkdir -p releases
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-windows-amd64.exe ./cmd/codebuddy-proxy
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-windows-x64.exe ./cmd/codebuddy-proxy
+	cp releases/codebuddy-proxy-windows-x64.exe releases/codebuddy-proxy-windows-amd64.exe
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-linux-amd64 ./cmd/codebuddy-proxy
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-darwin-arm64 ./cmd/codebuddy-proxy
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o releases/codebuddy-proxy-darwin-amd64 ./cmd/codebuddy-proxy
