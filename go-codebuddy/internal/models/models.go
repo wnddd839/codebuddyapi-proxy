@@ -23,21 +23,24 @@ var fallbackPaths = []string{
 }
 
 type Model struct {
-	ID               string   `json:"id"`
-	ModelID          string   `json:"modelId"`
-	UpstreamID       string   `json:"upstreamId"`
-	Name             string   `json:"name"`
-	DisplayName      string   `json:"displayName"`
-	Object           string   `json:"object"`
-	OwnedBy          string   `json:"owned_by"`
-	SupportsTools    bool     `json:"supportsTools"`
-	SupportsImages   bool     `json:"supportsImages"`
-	Credits          string   `json:"credits,omitempty"`
-	CreditMultiplier *float64 `json:"creditMultiplier,omitempty"`
-	Free             *bool    `json:"free,omitempty"`
-	Description      string   `json:"description,omitempty"`
-	Verified         bool     `json:"verified"`
-	Source           string   `json:"source"`
+	ID                string         `json:"id"`
+	ModelID           string         `json:"modelId"`
+	UpstreamID        string         `json:"upstreamId"`
+	Name              string         `json:"name"`
+	DisplayName       string         `json:"displayName"`
+	Object            string         `json:"object"`
+	OwnedBy           string         `json:"owned_by"`
+	SupportsTools     bool           `json:"supportsTools"`
+	SupportsImages    bool           `json:"supportsImages"`
+	SupportsReasoning bool           `json:"supportsReasoning"`
+	OnlyReasoning     bool           `json:"onlyReasoning,omitempty"`
+	Reasoning         map[string]any `json:"reasoning,omitempty"`
+	Credits           string         `json:"credits,omitempty"`
+	CreditMultiplier  *float64       `json:"creditMultiplier,omitempty"`
+	Free              *bool          `json:"free,omitempty"`
+	Description       string         `json:"description,omitempty"`
+	Verified          bool           `json:"verified"`
+	Source            string         `json:"source"`
 }
 
 type ListResult struct {
@@ -96,19 +99,24 @@ func ToAdminModels(rows []map[string]any, source string) []Model {
 			credits = ""
 		}
 		model := Model{
-			ID:             PublicModelID(upstreamID),
-			ModelID:        upstreamID,
-			UpstreamID:     upstreamID,
-			Name:           name,
-			DisplayName:    name,
-			Object:         "model",
-			OwnedBy:        "codebuddy",
-			SupportsTools:  truthy(row["supportsTools"]) || truthy(row["supportsToolCall"]),
-			SupportsImages: truthy(row["supportsImages"]) || truthy(row["supportsImage"]),
-			Credits:        credits,
-			Description:    strutil.First(fmt.Sprint(row["description"]), fmt.Sprint(row["descriptionZh"]), fmt.Sprint(row["descriptionEn"])),
-			Verified:       allVerified || upstreamID == "auto",
-			Source:         source,
+			ID:                PublicModelID(upstreamID),
+			ModelID:           upstreamID,
+			UpstreamID:        upstreamID,
+			Name:              name,
+			DisplayName:       name,
+			Object:            "model",
+			OwnedBy:           "codebuddy",
+			SupportsTools:     truthy(row["supportsTools"]) || truthy(row["supportsToolCall"]),
+			SupportsImages:    truthy(row["supportsImages"]) || truthy(row["supportsImage"]),
+			SupportsReasoning: truthy(row["supportsReasoning"]),
+			OnlyReasoning:     truthy(row["onlyReasoning"]),
+			Credits:           credits,
+			Description:       strutil.First(fmt.Sprint(row["description"]), fmt.Sprint(row["descriptionZh"]), fmt.Sprint(row["descriptionEn"])),
+			Verified:          allVerified || upstreamID == "auto",
+			Source:            source,
+		}
+		if reasoning, ok := row["reasoning"].(map[string]any); ok && len(reasoning) > 0 {
+			model.Reasoning = reasoning
 		}
 		if model.Description == "<nil>" {
 			model.Description = ""

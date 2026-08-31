@@ -6,6 +6,17 @@
 
 ---
 
+## v0.3.5 · 2026-08-31 · 思考档位透传
+
+- **Chat 入站**：解析 `reasoning_effort` / `reasoningEffort` / `reasoning` / `thinking`，写入上游 body。
+- **上游对齐**：实测仅 `reasoning.effort` 触发 `reasoning_content`；网关将 `reasoning_effort` 映射为 `reasoning: { effort }`（同时保留 `reasoning_effort` 兼容字段）。
+- **模型列表**：`/v1/models` 透传 `supportsReasoning` / `onlyReasoning` / `reasoning`（含 `supportedEfforts`、`defaultEffort`）。
+- **响应**：流式 delta 与 non-stream `message.reasoning_content` 回传思考内容；无思考时 `omitempty` 零回归。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.5
+
+---
+
 ## v0.3.4 · 2026-08-30 · 出站 cache 字段别名补齐
 
 - **问题**：管理台能看到 `totalCachedTokens`，但 CCSwitch 等下游缓存率仍极低。

@@ -75,6 +75,70 @@ func TestNormalizeToolChoice(t *testing.T) {
 	}
 }
 
+func TestApplyReasoningFieldsMapsEffort(t *testing.T) {
+	body := map[string]any{"model": "auto"}
+	provider.ApplyReasoningFields(body, provider.ChatOptions{ReasoningEffort: "high"})
+	reasoning, ok := body["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "high" {
+		t.Fatalf("reasoning=%v", body["reasoning"])
+	}
+	if body["reasoning_effort"] != "high" {
+		t.Fatalf("reasoning_effort=%v", body["reasoning_effort"])
+	}
+}
+
+func TestApplyReasoningFieldsPrefersReasoningObject(t *testing.T) {
+	body := map[string]any{"model": "auto"}
+	explicit := map[string]any{"effort": "low", "summary": "auto"}
+	provider.ApplyReasoningFields(body, provider.ChatOptions{
+		ReasoningEffort: "high",
+		Reasoning:       explicit,
+	})
+	reasoning, ok := body["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "low" || reasoning["summary"] != "auto" {
+		t.Fatalf("reasoning=%v", body["reasoning"])
+	}
+}
+
+func TestNormalizeModelsPreservesReasoning(t *testing.T) {
+	rows := provider.NormalizeModels(map[string]any{
+		"data": map[string]any{
+			"models": []any{
+				map[string]any{
+					"id": "glm-5.3-flash", "name": "GLM", "supportsToolCall": true,
+					"supportsReasoning": true, "onlyReasoning": true,
+					"reasoning": map[string]any{
+						"defaultEffort": "high", "supportedEfforts": []any{"low", "high", "max"},
+					},
+				},
+			},
+		},
+	})
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(rows))
+	}
+	if rows[0]["supportsReasoning"] != true {
+		t.Fatalf("supportsReasoning=%v", rows[0]["supportsReasoning"])
+	}
+	reasoning, ok := rows[0]["reasoning"].(map[string]any)
+	if !ok || reasoning["defaultEffort"] != "high" {
+		t.Fatalf("reasoning=%v", rows[0]["reasoning"])
+	}
+}
+
+func TestEventsFromOpenAIChunkReasoningContent(t *testing.T) {
+	chunk := provider.MapSSEEvent(map[string]any{
+		"choices": []any{
+			map[string]any{
+				"delta": map[string]any{"reasoning_content": "think"},
+			},
+		},
+	})
+	if len(chunk) != 1 || chunk[0].Type != "thinking_delta" || chunk[0].Text != "think" {
+		t.Fatalf("unexpected events: %+v", chunk)
+	}
+}
+
 func TestNormalizeModelsFromV3Shape(t *testing.T) {
 	rows := provider.NormalizeModels(map[string]any{
 		"data": map[string]any{
