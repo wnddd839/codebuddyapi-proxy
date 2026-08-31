@@ -50,6 +50,22 @@ func TestAuthorizeAPIKeyRequired(t *testing.T) {
 	}
 }
 
+func TestModelInfoAliasRoute(t *testing.T) {
+	srv := testServer(t, true, "", "secret-key")
+	for _, path := range []string{"/v1/model/info", "/model/info"} {
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32126"+path, nil)
+		req.Header.Set("Authorization", "Bearer secret-key")
+		rec := httptest.NewRecorder()
+		srv.HTTP.Handler.ServeHTTP(rec, req)
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("path %s returned 404", path)
+		}
+		if rec.Code != http.StatusOK && rec.Code != http.StatusBadGateway {
+			t.Fatalf("path %s status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestAdminOpenWithoutPassword(t *testing.T) {
 	srv := testServer(t, true, "", "secret-key")
 	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32126/direct-admin/", nil)

@@ -57,7 +57,7 @@ func TestPoolRoundTripSelectAndMark(t *testing.T) {
 	if selection.Account.Label != "one" {
 		t.Fatalf("unexpected account: %+v", selection.Account)
 	}
-	if err := pool.MarkResult(selection, true, ""); err != nil {
+	if err := pool.MarkResult(selection, true, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	store, err := pool.Read()
@@ -95,7 +95,7 @@ func TestPoolSelectMarkDoesNotSyncDiskEveryTime(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := pool.MarkResult(sel, true, ""); err != nil {
+		if err := pool.MarkResult(sel, true, "", 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -143,7 +143,7 @@ func TestPoolConcurrentSelectThroughput(t *testing.T) {
 				if err != nil {
 					continue
 				}
-				_ = pool.MarkResult(sel, true, "")
+				_ = pool.MarkResult(sel, true, "", 0)
 				ops.Add(1)
 			}
 		})
@@ -175,5 +175,114 @@ func TestSummarizeStoreForSitePrefersActiveRegion(t *testing.T) {
 	}
 	if summary.ActiveEnabledCount != 1 {
 		t.Fatalf("activeEnabled=%d", summary.ActiveEnabledCount)
+	}
+}
+
+func TestPoolSelectSkipsCooldown(t *testing.T) {
+	pool := accounts.NewPool(filepath.Join(t.TempDir(), "accounts.json"))
+	defer pool.Close()
+	one, _, err := pool.Upsert(accounts.CreateAccount(accounts.Account{
+		Label: "one", BearerToken: "token-one", Site: "domestic",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = pool.Upsert(accounts.CreateAccount(accounts.Account{
+		Label: "two", BearerToken: "token-two", Site: "domestic",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sel, err := pool.Select(accounts.SelectOptions{Site: "domestic", AccountID: one.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.MarkResult(sel, false, "429 too many requests", 2*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		picked, err := pool.Select(accounts.SelectOptions{Site: "domestic"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if picked.Account.ID == one.ID {
+			t.Fatalf("expected cooldown account skipped, got %s on attempt %d", one.ID, i+1)
+		}
+	}
+}
+
+func TestUpsertSameUserDifferentSites(t *testing.T) {
+	pool := accounts.NewPool(filepath.Join(t.TempDir(), "accounts.json"))
+	defer pool.Close()
+	cn, _, err := pool.Upsert(accounts.CreateAccount(accounts.Account{
+		Label: "cn", Site: "domestic", BearerToken: "token-cn",
+		AuthStatus: accounts.AuthStatus{UserID: "user@example.com"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	us, store, err := pool.Upsert(accounts.CreateAccount(accounts.Account{
+		Label: "us", Site: "global", BearerToken: "token-us",
+		AuthStatus: accounts.AuthStatus{UserID: "user@example.com"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cn.ID == us.ID {
+		t.Fatalf("domestic and global accounts must not collapse: %s", cn.ID)
+	}
+	if len(store.Accounts) != 2 {
+		t.Fatalf("accounts=%d want 2", len(store.Accounts))
+	}
+}
+
+func TestPoolSelectFallbackWhenAllCooldown(t *testing.T) {
+	pool := accounts.NewPool(filepath.Join(t.TempDir(), "accounts.json"))
+	defer pool.Close()
+	fast, _, err := pool.Upsert(accounts.CreateAccount(accounts.Account{
+		Label: "fast", BearerToken: "token-fast", Site: "domestic",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	slow, _, err := pool.Upsert(accounts.CreateAccount(accounts.Account{
+		Label: "slow", BearerToken: "token-slow", Site: "domestic",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	selFast, err := pool.Select(accounts.SelectOptions{Site: "domestic", AccountID: fast.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.MarkResult(selFast, false, "502 bad gateway", 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	selSlow, err := pool.Select(accounts.SelectOptions{Site: "domestic", AccountID: slow.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.MarkResult(selSlow, false, "502 bad gateway", 2*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	picked, err := pool.Select(accounts.SelectOptions{Site: "domestic"})
+	if err != nil {
+		t.Fatalf("expected fallback select, got err=%v", err)
+	}
+	if !picked.BypassedCooldown {
+		t.Fatal("expected BypassedCooldown=true")
+	}
+	if picked.Account.ID != fast.ID {
+		t.Fatalf("expected fastest recovery account %s, got %s", fast.ID, picked.Account.ID)
+	}
+	store, err := pool.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, acc := range store.Accounts {
+		if acc.ID == fast.ID && acc.CooldownUntil <= now {
+			t.Fatalf("fast account should still be cooling")
+		}
 	}
 }
