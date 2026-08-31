@@ -20,6 +20,7 @@ import (
 	"github.com/wnddd839/codebuddy-proxy/internal/httputil"
 	"github.com/wnddd839/codebuddy-proxy/internal/oauth"
 	"github.com/wnddd839/codebuddy-proxy/internal/openai"
+	"github.com/wnddd839/codebuddy-proxy/internal/opencode"
 	"github.com/wnddd839/codebuddy-proxy/internal/provider"
 	"github.com/wnddd839/codebuddy-proxy/internal/strutil"
 )
@@ -39,6 +40,7 @@ func New(cfg config.Config, svc *gateway.Service) *Server {
 	mux.HandleFunc("HEAD /health", s.handleHealth)
 	mux.HandleFunc("GET /v1/models", s.handleModelsAuth)
 	mux.HandleFunc("GET /models", s.handleModelsAuth)
+	mux.HandleFunc("GET /v1/model/info", s.handleModelInfoAuth)
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChatAuth)
 	mux.HandleFunc("POST /chat/completions", s.handleChatAuth)
 	mux.HandleFunc("GET /direct-admin", s.handleAdminPage)
@@ -162,6 +164,30 @@ func secretEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+func (s *Server) handleModelInfoAuth(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeAPI(w, r) {
+		return
+	}
+	s.handleModelInfo(w, r)
+}
+
+func (s *Server) handleModelInfo(w http.ResponseWriter, r *http.Request) {
+	fresh := queryTruthy(r.URL.Query().Get("fresh"))
+	listed, err := s.Svc.ListModels(r.Context(), fresh)
+	models := listed.Models
+	if err != nil || len(models) == 0 {
+		models = s.Svc.ConfiguredModels()
+	}
+	data := make([]map[string]any, 0, len(models))
+	for _, model := range models {
+		if model.ID == "" {
+			continue
+		}
+		data = append(data, opencode.LiteLLMModelInfoEntry(model))
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	fresh := queryTruthy(r.URL.Query().Get("fresh"))
 	listed, err := s.Svc.ListModels(r.Context(), fresh)
@@ -196,8 +222,8 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		if model.OnlyReasoning {
 			item["onlyReasoning"] = true
 		}
-		if len(model.Reasoning) > 0 {
-			item["reasoning"] = model.Reasoning
+		for key, value := range opencode.ModelListFields(model) {
+			item[key] = value
 		}
 		data = append(data, item)
 	}

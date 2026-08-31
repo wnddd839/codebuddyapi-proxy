@@ -35,8 +35,8 @@ curl -fsS http://127.0.0.1:32126/health
 
 默认 JSON `slog` 到 stdout（`INFO` 级别）。关注字段：
 
-- `codebuddy proxy starting` — 启动信息，含 addr / accountsPath / requireApiKey / apiKeyPreview
-- `generated and saved gateway api key` — 首次启动自动生成 Key（**含明文 Key，注意日志留存**）
+- `codebuddy proxy starting` — 启动细节（默认 `CODEBUDDY_PROXY_LOG_LEVEL=warn` 不输出；设 `info`/`debug` 可见）
+- `generated and saved gateway api key` — 首次启动自动生成 Key（**仅 debug**，不含明文；用户看管理台）
 - `codebuddy oauth credential refreshed`
 - `retrying codebuddy request with next account`
 - `retrying codebuddy request after oauth refresh`
