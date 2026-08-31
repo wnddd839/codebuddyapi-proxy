@@ -35,6 +35,11 @@
 
 - `go-codebuddy/scripts/probe-v3-models.js`：对比各上游 `/v3/config` 模型列表（排障用）。
 
+### Release 资产命名
+
+- **Windows 64 位请下载 `codebuddy-proxy-windows-x64.exe`**（与 `windows-amd64.exe` 相同，后者为兼容旧名）。
+- 勿在 Windows PC 上下载 `darwin-arm64` / `darwin-amd64`（macOS 专用）。
+
 下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.6
 
 ---
