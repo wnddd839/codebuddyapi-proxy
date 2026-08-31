@@ -6,6 +6,32 @@
 
 ---
 
+## v0.3.7 · 2026-08-31 · 号池冷却与规范落地
+
+### 号池冷却
+
+- 上游失败写入账号 `cooldownUntil`（11140/11128/11101/11102 → 5min，429 → 2min，502/503/504 → 30s），冷却期内不参与轮询。
+- **全冷却降级**：同区域全部账号冷却时，选 `cooldownUntil` 最小者继续服务（debug 日志 `pool select bypassed cooldown`），避免整体不可用。
+- **11140** 不再触发换号重试（策略错误换号无意义）。
+
+### OAuth / 账号
+
+- **Upsert 去重**改为 `(userId + site)`：国内/国际 OAuth 可并存。若旧版已合并为单账号，升级后需对缺失区域 **重新 OAuth**（不会自动拆分）。
+
+### 路由与文档
+
+- 补注册 **`GET /model/info`**（与 `/v1/model/info` 等价，OpenCode discovery 配置可用 `/model/info`）。
+- `docs/api/http.md` · runbook WARN 级别 · architecture 失败处理表同步。
+
+### 工程规范
+
+- `slices.Contains`、`new(loggedIn)`；`.githooks/pre-commit`（gofmt 检查 + 受影响包测试，不自动改暂存）。
+- Pi：`.agents/pi-system-prompt-go.md` + skill `go-codebuddy-modern`。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.7
+
+---
+
 ## v0.3.6 · 2026-08-31 · OpenCode / 号池 / 国际模型列表
 
 ### OpenCode 思考档位透传

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wnddd839/codebuddy-proxy/internal/accounts"
 	"github.com/wnddd839/codebuddy-proxy/internal/config"
@@ -68,7 +69,7 @@ func TestShouldRetryNextAccount(t *testing.T) {
 		{name: "429", err: "CodeBuddy chat completion failed with 429: too many requests", want: true},
 		{name: "503", err: "CodeBuddy chat completion failed with 503: service unavailable", want: true},
 		{name: "rate limit text", err: "upstream rate limit exceeded", want: true},
-		{name: "11140", err: "request illegal 11140", want: true},
+		{name: "11140 no retry", err: "request illegal 11140", want: false},
 		{name: "11128 no retry", err: "unapproved channel 11128", want: false},
 		{name: "11101 no retry", err: "tool_choice unmarshal 11101", want: false},
 		{name: "401 refresh not switch", err: "failed with 401: unauthorized", want: false},
@@ -133,6 +134,24 @@ func TestPoolSelectRoundRobin(t *testing.T) {
 	}
 	if s3.Account.ID == s1.Account.ID {
 		t.Fatalf("exclude should skip %s", s1.Account.ID)
+	}
+}
+
+func TestFailureCooldown(t *testing.T) {
+	tests := []struct {
+		err  string
+		want time.Duration
+	}{
+		{err: "request illegal 11140", want: 5 * time.Minute},
+		{err: "429 too many", want: 2 * time.Minute},
+		{err: "503 unavailable", want: 30 * time.Second},
+		{err: "context canceled", want: 0},
+	}
+	for _, tc := range tests {
+		got := failureCooldown(errors.New(tc.err))
+		if got != tc.want {
+			t.Fatalf("failureCooldown(%q)=%s want %s", tc.err, got, tc.want)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,7 +32,7 @@ var (
 	// 包级预编译，避免热路径（每个 chat 请求）重复编译正则。
 	reProviderModel    = regexp.MustCompile(`(?i)^codebuddy(?:(?:/|:)(.*))?$`)
 	reAuthFailure      = regexp.MustCompile(`(?i)(?:\b401\b|\b403\b|unauthori[sz]ed|forbidden|token|credential|auth|login|not authenticated|未登录|登录|凭证)`)
-	reRetryNextAccount = regexp.MustCompile(`(?i)\b429\b|\b502\b|\b503\b|\b504\b|rate.?limit|too many requests|11140|request illegal|site mismatch|invalid request`)
+	reRetryNextAccount = regexp.MustCompile(`(?i)\b429\b|\b502\b|\b503\b|\b504\b|rate.?limit|too many requests|site mismatch|invalid request`)
 )
 
 type Stats struct {
@@ -268,6 +269,9 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 		return CompleteResult{}, err
 	}
 	account := selection.Account
+	if selection.BypassedCooldown {
+		s.Log.Debug("pool select bypassed cooldown (all accounts cooling)", "accountId", account.ID, "cooldownUntil", account.CooldownUntil)
+	}
 	chatOpts := s.chatOptionsFromAccount(account, opts)
 	result, err := s.Provider.Complete(ctx, chatOpts)
 	if err != nil {
@@ -277,7 +281,7 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 			return CompleteResult{}, err
 		}
 		if s.shouldRetryNextAccount(err, selection, opts) {
-			_ = s.Pool.MarkResult(selection, false, err.Error())
+			_ = s.Pool.MarkResult(selection, false, err.Error(), failureCooldown(err))
 			s.Log.Warn("retrying codebuddy request with next account", "accountId", account.ID, "error", err.Error())
 			next := append(append([]string{}, opts.ExcludeIDs...), account.ID)
 			opts.ExcludeIDs = next
@@ -302,10 +306,10 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 				return s.CompleteFromPool(ctx, opts)
 			}
 		}
-		_ = s.Pool.MarkResult(selection, false, err.Error())
+		_ = s.Pool.MarkResult(selection, false, err.Error(), failureCooldown(err))
 		return CompleteResult{}, err
 	}
-	_ = s.Pool.MarkResult(selection, true, "")
+	_ = s.Pool.MarkResult(selection, true, "", 0)
 	return CompleteResult{
 		Result:    result,
 		Account:   accounts.SummarizeAccount(account),
@@ -371,10 +375,8 @@ func (s *Service) shouldRetryNextAccount(err error, selection accounts.Selection
 	if opts.AccountID != "" || selection.Account.ID == "" {
 		return false
 	}
-	for _, id := range opts.ExcludeIDs {
-		if id == selection.Account.ID {
-			return false
-		}
+	if slices.Contains(opts.ExcludeIDs, selection.Account.ID) {
+		return false
 	}
 	if s.shouldRefreshAfterFailure(err, selection) {
 		return false
@@ -388,7 +390,27 @@ func (s *Service) shouldRetryNextAccount(err error, selection accounts.Selection
 	if strings.Contains(msg, "11101") || strings.Contains(msg, "11102") {
 		return false
 	}
+	// 11140 为区域/策略非法请求，换号通常无效。
+	if strings.Contains(msg, "11140") || strings.Contains(msg, "request illegal") {
+		return false
+	}
 	return reRetryNextAccount.MatchString(err.Error())
+}
+
+func failureCooldown(err error) time.Duration {
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "11140"), strings.Contains(msg, "request illegal"),
+		strings.Contains(msg, "11128"), strings.Contains(msg, "unapproved channel"),
+		strings.Contains(msg, "11101"), strings.Contains(msg, "11102"):
+		return 5 * time.Minute
+	case strings.Contains(msg, "429"), strings.Contains(msg, "rate limit"), strings.Contains(msg, "too many requests"):
+		return 2 * time.Minute
+	case strings.Contains(msg, "502"), strings.Contains(msg, "503"), strings.Contains(msg, "504"):
+		return 30 * time.Second
+	default:
+		return 0
+	}
 }
 
 func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult, error) {

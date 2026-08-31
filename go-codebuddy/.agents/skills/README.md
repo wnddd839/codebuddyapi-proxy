@@ -15,6 +15,12 @@ This Go subproject vendors agent skills under `.agents/skills/`.
 - Source: this repository
 - Purpose: package boundaries, docs sync, security, no legacy transports
 
+### Pi agent (global)
+
+- Skill: `go-codebuddy-modern` in `~/.pi/agent/skills/`
+- System prompt: `.agents/pi-system-prompt-go.md`
+- Wraps `use-modern-go` + `codebuddy-go` into one mandatory workflow
+
 ## Update JetBrains skill
 
 ```bash
