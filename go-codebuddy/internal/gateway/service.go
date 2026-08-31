@@ -31,7 +31,7 @@ var (
 	// 包级预编译，避免热路径（每个 chat 请求）重复编译正则。
 	reProviderModel    = regexp.MustCompile(`(?i)^codebuddy(?:(?:/|:)(.*))?$`)
 	reAuthFailure      = regexp.MustCompile(`(?i)(?:\b401\b|\b403\b|unauthori[sz]ed|forbidden|token|credential|auth|login|not authenticated|未登录|登录|凭证)`)
-	reRetryNextAccount = regexp.MustCompile(`(?i)11140|request illegal|site mismatch|invalid request`)
+	reRetryNextAccount = regexp.MustCompile(`(?i)\b429\b|\b502\b|\b503\b|\b504\b|rate.?limit|too many requests|11140|request illegal|site mismatch|invalid request`)
 )
 
 type Stats struct {
@@ -277,6 +277,7 @@ func (s *Service) CompleteFromPool(ctx context.Context, opts CompleteOptions) (C
 			return CompleteResult{}, err
 		}
 		if s.shouldRetryNextAccount(err, selection, opts) {
+			_ = s.Pool.MarkResult(selection, false, err.Error())
 			s.Log.Warn("retrying codebuddy request with next account", "accountId", account.ID, "error", err.Error())
 			next := append(append([]string{}, opts.ExcludeIDs...), account.ID)
 			opts.ExcludeIDs = next
@@ -378,12 +379,16 @@ func (s *Service) shouldRetryNextAccount(err error, selection accounts.Selection
 	if s.shouldRefreshAfterFailure(err, selection) {
 		return false
 	}
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 	// 11128 为渠道/策略限制，换号重试通常无效（客户端指纹相同）。
-	if strings.Contains(msg, "11128") || strings.Contains(strings.ToLower(msg), "unapproved channel") {
+	if strings.Contains(msg, "11128") || strings.Contains(msg, "unapproved channel") {
 		return false
 	}
-	return reRetryNextAccount.MatchString(msg)
+	// 11101/11102 为请求形态或模型不可用，换号无意义。
+	if strings.Contains(msg, "11101") || strings.Contains(msg, "11102") {
+		return false
+	}
+	return reRetryNextAccount.MatchString(err.Error())
 }
 
 func (s *Service) ListModels(ctx context.Context, fresh bool) (models.ListResult, error) {
@@ -516,7 +521,7 @@ func (s *Service) SetPoolSite(site string) (map[string]any, error) {
 	_ = os.Setenv("CODEBUDDY_BASE_URL", baseURL)
 	_ = os.Setenv("CODEBUDDY_INTERNET_ENVIRONMENT", internet)
 
-	s.Log.Info("pool site switched", "site", site, "baseUrl", baseURL, "envFile", envPath)
+	s.Log.Debug("pool site switched", "site", site, "baseUrl", baseURL, "envFile", envPath)
 	payload := s.Status()
 	payload["ok"] = true
 	payload["switched"] = true

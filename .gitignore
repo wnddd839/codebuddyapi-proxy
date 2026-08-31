@@ -4,11 +4,15 @@ bin/
 *.test
 *.out
 .env
+.env.gz
 *.log
 .DS_Store
 node_modules/
 go-codebuddy/bin/
 go-codebuddy/.env
+
+# private deploy notes / smoke (never push)
+docs/private/
 
 # local agent / IDE scratch
 .cline/
@@ -20,6 +24,7 @@ go-codebuddy/.env
 ~/
 preview.html
 admin-models.json
+opencode-config.json
 
 # prebuilt binaries live on GitHub Releases, not in git
 go-codebuddy/releases/codebuddy-proxy-*
