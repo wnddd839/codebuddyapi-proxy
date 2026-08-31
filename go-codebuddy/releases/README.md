@@ -7,10 +7,13 @@
 
 | 平台 | 资源名 |
 |------|--------|
-| Windows x64 | `codebuddy-proxy-windows-amd64.exe` |
-| Linux x64 | `codebuddy-proxy-linux-amd64` |
-| macOS Apple Silicon | `codebuddy-proxy-darwin-arm64` |
+| **Windows 64 位** | `codebuddy-proxy-windows-x64.exe`（推荐） |
+| Windows 64 位（旧名） | `codebuddy-proxy-windows-amd64.exe`（与 x64 相同） |
+| Linux 64 位 | `codebuddy-proxy-linux-amd64` |
+| macOS Apple 芯片 (M1/M2/M3) | `codebuddy-proxy-darwin-arm64` |
 | macOS Intel | `codebuddy-proxy-darwin-amd64` |
+
+> **Windows 用户请勿下载 `darwin-arm64` / `darwin-amd64`**，那是 macOS 专用，在 Windows 上会报错。
 
 校验文件随 Release 附带：`SHA256SUMS.txt`
 
@@ -23,16 +26,16 @@
 
 ```bash
 cd go-codebuddy
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o releases/codebuddy-proxy-windows-amd64.exe ./cmd/codebuddy-proxy
+make release
 ```
 
 ## Windows 快速开始
 
-1. 从 [Releases](https://github.com/wnddd839/codebuddyapi-proxy/releases/latest) 下载 `codebuddy-proxy-windows-amd64.exe`
+1. 从 [Releases](https://github.com/wnddd839/codebuddyapi-proxy/releases/latest) 下载 **`codebuddy-proxy-windows-x64.exe`**
 2. 直接运行（会自动读取/创建同目录 `.env`）
 
 ```powershell
-.\codebuddy-proxy-windows-amd64.exe
+.\codebuddy-proxy-windows-x64.exe
 ```
 
 3. 打开 Admin：`http://127.0.0.1:32126/direct-admin/`
@@ -59,4 +62,4 @@ chmod +x ./codebuddy-proxy-linux-amd64   # 或 darwin 对应文件
 | `CODEBUDDY_SITE` | `domestic` 或 `global` |
 | `CODEBUDDY_PROXY_ACCOUNTS_PATH` | 账号池 JSON 路径 |
 
-完整说明见 [`../docs/guides/getting-started.md`](../docs/guides/getting-started.md)。
+完整说明见 [`../docs/guides/getting-started.md`](../docs/guides/getting-started.md).

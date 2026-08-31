@@ -63,9 +63,16 @@
 
 从 [GitHub Releases](https://github.com/wnddd839/codebuddyapi-proxy/releases/latest) 下载对应平台文件，直接运行。
 
+| 系统 | 文件 |
+|------|------|
+| **Windows 64 位** | `codebuddy-proxy-windows-x64.exe` |
+| Linux 64 位 | `codebuddy-proxy-linux-amd64` |
+| macOS Apple 芯片 | `codebuddy-proxy-darwin-arm64` |
+| macOS Intel | `codebuddy-proxy-darwin-amd64` |
+
 ```powershell
 # Windows
-.\codebuddy-proxy-windows-amd64.exe
+.\codebuddy-proxy-windows-x64.exe
 ```
 
 ```bash
