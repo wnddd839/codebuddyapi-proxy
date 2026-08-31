@@ -204,14 +204,57 @@ type fetchResult struct {
 	Models []map[string]any
 }
 
-func (c *Lister) fetchV3(ctx context.Context, client *provider.Client, opts provider.ChatOptions) (fetchResult, error) {
-	candidates := []string{provider.ResolveProtocolDirectBaseURL(opts)}
-	if !strings.Contains(candidates[0], "copilot.tencent.com") {
-		candidates = append(candidates, "https://copilot.tencent.com")
+func v3ConfigCandidateBases(opts provider.ChatOptions) []string {
+	primary := provider.ResolveProtocolDirectBaseURL(opts)
+	if provider.RegionOf(opts) != "global" {
+		return []string{primary}
 	}
+	// 国际站：www.codebuddy.ai/v3/config 有 Gemini/GPT 等，但不含 hy4；
+	// copilot.tencent.com/v3/config 用同一 token 可读且含 hy4/glm 等，需合并。
+	if strings.Contains(primary, "copilot.tencent.com") {
+		return []string{primary}
+	}
+	return []string{primary, "https://copilot.tencent.com"}
+}
+
+func mergeModelsByID(batches ...[]map[string]any) []map[string]any {
+	seen := make(map[string]struct{})
+	out := make([]map[string]any, 0)
+	for _, rows := range batches {
+		for _, row := range rows {
+			id := modelRowID(row)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func modelRowID(row map[string]any) string {
+	id := strings.TrimSpace(fmt.Sprint(row["id"]))
+	if id == "" || id == "<nil>" {
+		id = strings.TrimSpace(fmt.Sprint(row["modelId"]))
+	}
+	if id == "" || id == "<nil>" {
+		return ""
+	}
+	return id
+}
+
+func (c *Lister) fetchV3(ctx context.Context, client *provider.Client, opts provider.ChatOptions) (fetchResult, error) {
+	candidates := v3ConfigCandidateBases(opts)
 	headers := client.BuildProtocolDirectHeaders(opts)
 	headers.Set("Accept", "application/json")
-	var lastErr error
+	var (
+		batches [][]map[string]any
+		lastErr error
+	)
 	for _, base := range candidates {
 		rows, err := c.fetchJSONModels(ctx, client.HTTP, provider.NormalizeBaseURL(base)+upstreamConfigPath, headers)
 		if err != nil {
@@ -222,7 +265,11 @@ func (c *Lister) fetchV3(ctx context.Context, client *provider.Client, opts prov
 			lastErr = fmt.Errorf("empty models")
 			continue
 		}
-		return fetchResult{Models: rows}, nil
+		batches = append(batches, rows)
+	}
+	merged := mergeModelsByID(batches...)
+	if len(merged) > 0 {
+		return fetchResult{Models: merged}, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("v3 config unavailable")

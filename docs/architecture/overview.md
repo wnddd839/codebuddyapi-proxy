@@ -57,7 +57,7 @@ server ──► gateway ──► accounts pool + oauth refresh
 **失败处理**：
 
 - 鉴权类失败 → 强制 refresh 后重试同一账号一次
-- `11140` 等区域/渠道类失败 → 换下一个账号重试
+- `11140` / **429·502·503·504·rate limit** 等可恢复上游故障 → 标记当前账号 `failedRequests` + `lastError` 后换下一个账号重试
 - `11101` 不计为换号条件
 - 客户端主动取消 → 按正常结束计，不计失败
 
