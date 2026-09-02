@@ -12,3 +12,8 @@ bin/
 releases/codebuddy-proxy-*
 releases/SHA256SUMS.txt
 releases/*.exe
+
+# local-only agent / review material (keep on disk, never publish)
+.agents/
+docs/review/
+.local/
