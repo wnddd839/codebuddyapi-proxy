@@ -30,3 +30,19 @@ opencode-config.json
 go-codebuddy/releases/codebuddy-proxy-*
 go-codebuddy/releases/SHA256SUMS.txt
 go-codebuddy/releases/*.exe
+
+# temp clones / research scratch
+.tmp/
+
+# --- workspace multi-project boundaries ---
+# Outer folder may later hold both go-codebuddy and go-cursor.
+# GitHub remotes for CodeBuddy must NOT publish the Cursor module.
+go-cursor/
+
+# Local-only agent/review artifacts (never push)
+.local/
+docs/review/
+go-codebuddy/docs/review/
+
+# Agent skills / Pi prompts stay on disk for local agents; do not publish
+go-codebuddy/.agents/
