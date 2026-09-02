@@ -1,50 +1,39 @@
-bin/
-*.exe
-*.exe~
-*.test
-*.out
+# Proxy integrator workspace — not the GitHub publish root.
+# Publish with: ./scripts/push-codebuddy.sh
+
+# secrets / local env
 .env
-.env.gz
+.env.*
 *.log
 .DS_Store
-node_modules/
-go-codebuddy/bin/
-go-codebuddy/.env
 
-# private deploy notes / smoke (never push)
-docs/private/
-
-# local agent / IDE scratch
+# IDE / agent scratch
 .cline/
 .omo/
 .idea/
 .vscode/
+node_modules/
 
-# accidental literal home / temp artifacts
-~/
+# local-only
+.local/
+.tmp/
 preview.html
 admin-models.json
 opencode-config.json
+~/
 
-# prebuilt binaries live on GitHub Releases, not in git
+# sibling project (publish separately later)
+go-cursor/
+
+# go-codebuddy local-only (kept on disk, never in CodeBuddy GitHub)
+go-codebuddy/.agents/
+go-codebuddy/docs/review/
+go-codebuddy/.local/
+go-codebuddy/bin/
+go-codebuddy/.env
 go-codebuddy/releases/codebuddy-proxy-*
 go-codebuddy/releases/SHA256SUMS.txt
 go-codebuddy/releases/*.exe
-
-# temp clones / research scratch
-.tmp/
-
-# --- workspace multi-project boundaries ---
-# Outer folder may later hold both go-codebuddy and go-cursor.
-# GitHub remotes for CodeBuddy must NOT publish the Cursor module.
-go-cursor/
-
-# Local-only agent/review artifacts (never push)
-.local/
-docs/review/
-go-codebuddy/docs/review/
-
-# Agent skills / Pi prompts stay on disk for local agents; do not publish
-go-codebuddy/.agents/
-
-# Prefer scripts/push-codebuddy.sh — plain `git push` still pushes the integrator monorepo.
+go-codebuddy/*.exe
+go-codebuddy/*.test
+go-codebuddy/*.out

@@ -1,29 +1,25 @@
-# Proxy workspace (local integrator)
+# Proxy workspace（本地整合目录）
 
-本目录是本地 **proxy 整合工作区**，不是直接推到 CodeBuddy GitHub 的仓库根。
+外层只做整合；**推 GitHub 时只用 `go-codebuddy/`**。
 
 ```text
 .
-├── go-codebuddy/   ← CodeBuddy 反代（下次更新只推这个目录的内容到 GitHub）
-├── go-cursor/      ← Cursor 反代（本地兄弟项目，gitignore，不随 CodeBuddy 发布）
-├── .local/         ← 本地审查/草稿
-└── scripts/        ← 推送辅助脚本
+├── go-codebuddy/          CodeBuddy 反代（产品根：README / cmd / docs / CI）
+├── go-cursor/             Cursor 反代（本地兄弟，不随 CodeBuddy 发布）
+├── scripts/push-codebuddy.sh
+├── .local/                私有部署笔记、审查稿、本地杂物
+└── .tmp/                  临时克隆（如 9router 研究）
 ```
 
-## 推送 CodeBuddy（只发 go-codebuddy）
+## 推送 CodeBuddy
 
 ```bash
-# 预览将要发布的树（不推）
-./scripts/push-codebuddy.sh --dry-run
-
-# 推到 origin（codebuddyapi-proxy）的 main
-./scripts/push-codebuddy.sh
-
-# 同时推 mirror（codebuddy-proxy）
-./scripts/push-codebuddy.sh --also-mirror
+./scripts/push-codebuddy.sh --dry-run     # 预览远程根目录
+./scripts/push-codebuddy.sh               # 推 origin main（仅 go-codebuddy 内容）
+./scripts/push-codebuddy.sh --also-mirror # 同时推 mirror
 ```
 
-脚本用 `git subtree split --prefix=go-codebuddy`，远程仓库根目录会直接是 README / cmd / internal / docs，**不会**出现外层的 `go-cursor/`。
+远程仓库根会是 `README.md`、`cmd/`、`internal/`、`docs/`……**不会**出现 `go-cursor/` 或本整合目录杂项。
 
 ## 本地开发
 
