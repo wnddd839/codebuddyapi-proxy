@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+#
+# pre-push guard: block pushing anything that is not plain project source.
+#
+# Three layers:
+#   BLOCK  (exit 1)  - secrets, local env, private keys, binaries, local-only scratch
+#   WARN   (exit 0)  - unusually large files, new design/ or preview-ish files
+#   ALLOW  (exit 0)  - project source, docs, project-level .agents/skills (referenced by README)
+#
+# Bypass with:  git push --no-verify
+# (Only for emergencies. If you find yourself bypassing often, fix the rule instead.)
+
+set -uo pipefail
+
+# ---------- plumbing ----------
+# pre-push receives "<local ref> <local sha> <remote ref> <remote sha>" lines on stdin.
+ZERO="0000000000000000000000000000000000000000"
+
+RED=$'\033[31m'; YEL=$'\033[33m'; GRN=$'\033[32m'; BLD=$'\033[1m'; RST=$'\033[0m'
+[ -t 1 ] || { RED=""; YEL=""; GRN=""; BLD=""; RST=""; }
+
+blocked=0
+warned=0
+
+# Collect the set of commits being pushed (new commits on the remote side).
+commits_to_check=()
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Deleting a remote ref: nothing to scan.
+  if [ "$local_sha" = "$ZERO" ]; then
+    continue
+  fi
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New branch: scan everything reachable from local, minus what remote already has.
+    range="$local_sha"
+  else
+    range="${remote_sha}..${local_sha}"
+  fi
+  while read -r c; do
+    [ -n "$c" ] && commits_to_check+=("$c")
+  done < <(git rev-list "$range" --not --remotes 2>/dev/null)
+done
+
+# Nothing new to push (all commits already on some remote) -> nothing to forbid.
+if [ "${#commits_to_check[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+# ---------- rules: BLOCK (regex, matched against path AND content) ----------
+# Keep these tight. A rule that is too broad trains people to use --no-verify.
+BLOCK_PATH_RULES=(
+  # --- secrets & environment ---
+  '(^|/)\.env$'
+  '(^|/)\.env\.[A-Za-z0-9_.-]+$'
+  '(^|/)[A-Za-z0-9_.-]*\.(pem|key|p12|pfx|jks|keystore)$'
+  '(^|/)id_(rsa|dsa|ecdsa|ed25519)$'
+  '(^|/)\.npmrc$'
+  '(^|/)\.netrc$'
+  '(^|/)\.aws/credentials$'
+  '(^|/)\.ssh/'
+  # --- local credentials / account data ---
+  '(^|/)proxy-accounts\.json$'
+  # --- build artifacts & binaries ---
+  '(^|/)[A-Za-z0-9_.-]+\.(exe|dll|so|dylib|bin|o|a|jar|zip|tar|gz|tgz|7z|rar|deb|rpm|dmg|pkg|msi|apk)$'
+  # --- local agent / IDE scratch ---
+  '(^|/)\.(cline|omo|idea|vscode|cursor|windsurf|codeium|aider|continue|kilocode)/'
+  '(^|/)\.DS_Store$'
+  '(^|/)Thumbs\.db$'
+  '(^|/)\.[A-Za-z0-9_.-]+\.swp$'
+  '(^|/)[A-Za-z0-9_.-]*\.log$'
+  # --- accidental literal home dirs ---
+  '(^|/)~(/|$)'
+  # --- local scratch / previews ---
+  '(^|/)preview[a-zA-Z0-9_-]*\.(html|htm|md)$'
+  '(^|/)[A-Za-z0-9._-]*\.(local|bak|orig|rej|tmp|temp)$'
+)
+
+# Content signatures that must never appear in tracked text files.
+BLOCK_CONTENT_RULES=(
+  'BEGIN (RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY'
+  'ghp_[A-Za-z0-9]{20,}'
+  'gho_[A-Za-z0-9]{20,}'
+  'ghu_[A-Za-z0-9]{20,}'
+  'ghs_[A-Za-z0-9]{20,}'
+  'github_pat_[A-Za-z0-9_]{20,}'
+  'sk-[A-Za-z0-9]{20,}'
+  'AKIA[0-9A-Z]{16}'
+  'xox[baprs]-[A-Za-z0-9-]{10,}'
+  'cbp_[A-Za-z0-9]{24,}'
+)
+
+# Home-directory leakage: the repo must not record one developer's machine layout.
+BLOCK_CONTENT_HOME=1
+HOME_PATTERNS=(
+  'C:/Users/[^/"]+/[A-Za-z0-9._ -]+'
+  '/home/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+'
+  '/Users/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+'
+)
+
+# ---------- rules: WARN (soft) ----------
+WARN_SIZE_KB=200
+WARN_PATH_RULES=(
+  '(^|/)design/[0-9][0-9]-.*\.md$'
+  '(^|/)[A-Za-z0-9._-]*-preview\.[A-Za-z0-9]+$'
+)
+
+# ---------- scan ----------
+# Only inspect files touched by the commits being pushed.
+changed_files=$(
+  for c in "${commits_to_check[@]}"; do
+    git diff-tree --no-commit-id --name-only -r --diff-filter=ACM "$c" 2>/dev/null
+  done | sort -u
+)
+
+if [ -z "$changed_files" ]; then
+  exit 0
+fi
+
+report_block_path() {
+  blocked=1
+  printf '%s%s[BLOCK]%s %s\n' "$RED" "$BLD" "$RST" "$1"
+  printf '       rule: path matches %s\n' "$2"
+  printf '       fix:  git rm --cached "%s"  + add to .gitignore\n' "$1"
+}
+
+report_block_content() {
+  blocked=1
+  printf '%s%s[BLOCK]%s %s\n' "$RED" "$BLD" "$RST" "$1"
+  printf '       rule: content matches %s\n' "$2"
+  printf '       file: %s\n' "$3"
+  if [ -n "${4:-}" ]; then
+    printf '       line: %s\n' "$4"
+  fi
+  printf '       fix:  remove the secret, rotate it if it was ever public\n'
+}
+
+report_warn() {
+  warned=1
+  printf '%s[WARN ]%s %s\n' "$YEL" "$RST" "$1"
+  printf '       %s\n' "$2"
+}
+
+while IFS= read -r path; do
+  [ -z "$path" ] && continue
+
+  # --- path rules (BLOCK) ---
+  for rule in "${BLOCK_PATH_RULES[@]}"; do
+    if [[ "$path" =~ $rule ]]; then
+      report_block_path "$path" "$rule"
+      break
+    fi
+  done
+
+  # --- size rule (WARN) ---
+  blob_sha=$(git rev-parse ":$path" 2>/dev/null || true)
+  if [ -n "$blob_sha" ]; then
+    size=$(git cat-file -s "$blob_sha" 2>/dev/null || echo 0)
+    if [ "${size:-0}" -gt $((WARN_SIZE_KB * 1024)) ]; then
+      report_warn "$path" "large file: $((size / 1024)) KB (threshold ${WARN_SIZE_KB} KB)"
+    fi
+  fi
+
+  # --- soft path rules (WARN) ---
+  for rule in "${WARN_PATH_RULES[@]}"; do
+    if [[ "$path" =~ $rule ]]; then
+      report_warn "$path" "review before sharing: $rule"
+      break
+    fi
+  done
+
+  # --- content rules: skip anything that is not text ---
+  # Honor .gitattributes if present; otherwise do a cheap binary sniff.
+  if [ -n "$blob_sha" ]; then
+    if git cat-file blob "$blob_sha" 2>/dev/null | head -c 8000 | grep -qP '\x00' 2>/dev/null; then
+      continue
+    fi
+  fi
+
+  # --- content rules (BLOCK) ---
+  # Skip the hook's own rules file: its regex literals would otherwise match
+  # themselves and block every push (self-referential false positive).
+  if [ "$path" = ".githooks/pre-push" ] || [[ "$path" == .githooks/* ]]; then
+    continue
+  fi
+
+  for rule in "${BLOCK_CONTENT_RULES[@]}"; do
+    hit=$(git grep -nIE "$rule" -- "$path" 2>/dev/null | head -n 1)
+    if [ -n "$hit" ]; then
+      report_block_content "$path" "$rule" "$path" "${hit#*:}"
+      break
+    fi
+  done
+
+  # --- home-directory leakage (BLOCK) ---
+  if [ "$BLOCK_CONTENT_HOME" = "1" ]; then
+    for rule in "${HOME_PATTERNS[@]}"; do
+      hit=$(git grep -nIE "$rule" -- "$path" 2>/dev/null | head -n 1)
+      if [ -n "$hit" ]; then
+        report_block_content "$path" "local absolute path ($rule)" "$path" "${hit#*:}"
+        break
+      fi
+    done
+  fi
+done <<< "$changed_files"
+
+# ---------- verdict ----------
+echo
+if [ "$blocked" -ne 0 ]; then
+  printf '%s%s✖ push blocked%s — the commits above contain files that are not plain source.\n' "$RED" "$BLD" "$RST"
+  echo
+  echo "  Release artifacts (binaries, SHA256SUMS) belong on GitHub Releases, not in git."
+  echo "  Local scratch, .env, credentials and personal paths must never be pushed."
+  echo
+  echo "  If you are certain this is a false positive:"
+  echo "    git push --no-verify"
+  echo "  Better: add the path/pattern to .gitignore, or narrow the rule in .githooks/pre-push."
+  exit 1
+fi
+
+if [ "$warned" -ne 0 ]; then
+  printf '%s⚠ push allowed with warnings%s — double-check the items above.\n' "$YEL" "$RST"
+else
+  printf '%s✔ pre-push check passed%s — source-only push confirmed.\n' "$GRN" "$RST"
+fi
+exit 0
