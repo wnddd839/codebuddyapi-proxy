@@ -4,7 +4,7 @@
 - `PageHTML()`：管理台  
 - `LaunchPage(title, message)`：OAuth 中间页  
 
-**性质**：保留全部功能，替换设计语言。不是重写 JS 业务。
+**性质**：保留全部功能，替换设计语言。严格执行 Editorial 杂志风与章节切页架构。
 
 ---
 
@@ -25,15 +25,16 @@
 本地开发者工具控制台，杂志排版。  
 用户做：OAuth · 看号池 · Credits · 刷模型 · 复制 Base URL / API Key · 排错。
 
-优先级：
+核心排版原则：
 
 ```
 可扫描性  >  杂志气场
 信息仍在  >  留白仪式感
 单色层级  >  状态彩点
+章节切页  >  单页堆叠
 ```
 
-产品页可以大留白；管理台 **同一套 token**，但 section 间距收紧，避免 1366×768 首屏只剩标题。
+管理台采用 **Editorial 章节切页架构（Chapter Tabs）**，彻底避免将所有表单、账号卡片、模型列表全部单页垂直堆叠所导致的视觉臃肿。
 
 ---
 
@@ -45,9 +46,9 @@
 | E2 | `feTurbulence`、多层 radial-gradient 光晕 | 删除 `body::before/::after` 装饰层 |
 | E3 | 全页 `backdrop-filter` | 仅 `.topbar` 允许 `blur(8px)` + `background: rgba(249,248,246,.90)` |
 | E4 | `border-radius` > 0 | 全部 `0` |
-| E5 | `box-shadow` | 全部删除 |
+| E5 | `box-shadow` | 全部删除（除切页当前 tab 底部内嵌 2px 指示线） |
 | E6 | 按钮渐变 / inset 高光 | 主按钮纯反相填色 |
-| E7 | Inter / Outfit 等 Web 字体 | 系统衬线 + 系统无衬线 |
+| E7 | Inter / Outfit / Fraunces 等 Web 字体 | 系统展示衬线 + 系统无衬线 |
 | E8 | 胶囊 `border-radius: 999px` | 禁止；badge 改为 1px 方框 + uppercase label |
 | E9 | Canvas / 粒子 | 管理台零 Canvas |
 
@@ -59,127 +60,118 @@ class 名 `.teal` `.danger` `.pill.good` **保留**（H3），只改 CSS：
 
 ---
 
-## §3 视觉规则
+## §3 视觉与切页规则
 
 ### 3.1 顶栏
 
 ```
 position: sticky; top: 0; z-index: 50
 background: rgba(249,248,246,.90)
-backdrop-filter: blur(8px)          /* 仅此处 */
+backdrop-filter: blur(8px)
 border-bottom: 1px solid rgba(28,28,28,.10)
 height: 56–64px
-左：衬线 logo 字  tracking 0.3em  uppercase  「CODEBUDDY」
-右：健康文字 · 传输 · 站点    sans  xs  tracking 0.2em  uppercase  /60
+左：衬线 logo 字 tracking 0.2em uppercase 「CODEBUDDY」+ 传输协议
+右：健康指示点与状态 · 传输方式 · 当前站点（sans xs tracking 0.15em uppercase /60）
 ```
 
-不要胶囊容器包状态。用 `·` 分隔。
+### 3.2 章节切页导航（Chapter Navigation）
 
-### 3.2 版式
+为消除单页垂直堆叠的臃肿感，管理台采用 4 大杂志章节切页：
 
 ```
-最大宽度        1200px（管理台密度；不要用产品页那种 py-40）
-左右 padding    24px / 48px
+[01 / 概览与监控]   [02 / 账号池与授权]   [03 / 客户端接入]   [04 / 模型与快照]
+```
+
+- **01 / 概览与监控 (`#tab-overview`)**：
+  - 核心指标看板：登录态（`#mLogin`）、Credits（`#mCredits`）、启用数（`#mEnabled`）、成功/失败（`#mSF`）、总 Tokens（`#mTokens`）；
+  - 刷新状态（`#btnRefresh`）与拉取模型（`#btnModels`）；
+  - 429 智能熔断与 Reasoning 深度思考链双栏架构说明。
+- **02 / 账号池与授权 (`#tab-pool`)**：
+  - 账号池集群区域切换（`#poolSiteSeg`，`#btnPoolDomestic` / `#btnPoolGlobal`）；
+  - 账号列表容器（`#accounts`）；
+  - OAuth 授权卡片（`#codebuddy` 锚点，`#site`，`#label`，`#btnStart`，`#btnPoll`，`#launchLink`，`#oauthMsg`，`#oauthRaw`）。
+- **03 / 客户端接入 (`#tab-client`)**：
+  - OpenAI 兼容接入面板（`#client-config`，`#openAiBaseUrl`，`#openAiChatUrl`，`#openAiApiKey`，`#openAiModel`）；
+  - 复制与生成 Key（`#copyBaseUrl`，`#copyChatUrl`，`#copyApiKey`，`#copyModel`，`#btnGenerateKey`，`#btnRefreshClient`）。
+- **04 / 模型与快照 (`#tab-models`)**：
+  - 可用模型芯片区（`#modelChips`，`#modelsRaw`）；
+  - 实时快照 JSON 诊断（`#statusRaw`）。
+
+**联动机制**：
+- 支持 URL Hash 自动导航：
+  - 访问 `/direct-admin/#codebuddy` 时（如 OAuth 成功后从 LaunchPage 点击返回）自动激活 **`02 / 账号池与授权`**；
+  - 访问 `/direct-admin/#client-config` 时自动激活 **`03 / 客户端接入`**。
+- **DOM 契约完全保留**：全部 41 个契约 ID 始终存在于 DOM 中，异步 API 轮询刷新零阻碍。
+
+### 3.3 版式与间距
+
+```
+最大宽度        1200px
+左右 padding    24px
 基础字号        14px
-正文行高        1.625+
-section 间距    32–48px（不是 96–160px）
+正文行高        1.625
 卡片            1px border /10，padding 24px，radius 0
 卡片 hover      border 加深到 /40，无阴影、不位移
 ```
 
-区块标题：衬线，weight 400。  
-Label：uppercase tracking 0.2em，`/40`。
-
-### 3.3 表单
-
-```
-input/select: 无盒影、无 outline、无 ring
-border: none; border-bottom: 1px solid rgba(28,28,28,.20)
-font: 衬线 18–20px（短字段）；URL/Key 仍等宽
-focus: border-bottom-color #1C1C1C
-```
-
-复制行（Base URL / API Key）允许等宽 + 底边，右侧「复制」为 hover-underline 文字按钮。
-
-### 3.4 按钮
-
-主操作（开始认证、拉取模型、生成 Key）：
+### 3.4 表单（底边线风格）
 
 ```css
-padding: 12px 24px;
-font-size: 13px;
-letter-spacing: .08em;
-text-transform: uppercase;
+input, select {
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  border-bottom: 1px solid rgba(28, 28, 28, 0.20);
+  background: transparent;
+  color: #1C1C1C;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 200ms ease;
+}
+input:focus, select:focus {
+  border-bottom-color: #1C1C1C;
+}
+```
+
+### 3.5 按钮
+
+主操作（反相填色）：
+```css
 background: #1C1C1C;
 color: #F9F8F6;
 border: 1px solid #1C1C1C;
 border-radius: 0;
-transition: color .2s, background .2s, border-color .2s;
+font-size: 12px;
+letter-spacing: .06em;
+text-transform: uppercase;
 ```
 
-次操作：透明底 + 1px `#1C1C1C`/20 边框，hover 底 `#1C1C1C`/0.02。  
-删除：次操作样式，click 二次确认。
+次操作：透明底 + 1px 细边框，hover 加深。
 
-### 3.5 账号行
+### 3.6 动效纪律
 
-每条一行可扫：
-
-```
-标签  ·  站点  ·  登录态  ·  成功/失败  ·  Credits  ·  [查余额][刷新][禁用][删除]
-```
-
-数字等宽右对齐。操作默认 `/40`，hover 到 `/80`。  
-禁止三颗实心彩按钮并排。
-
-### 3.6 模型 chips
-
-方框 1px `/10`，uppercase 或等宽模型 id。  
-`.chip.btnish` 点击复制保留。hover 边框 `/40`，可 `font-style: italic`（500ms）。
-
-### 3.7 动效
-
-```
-hover / focus     120ms
-toast             300ms  底部偏右，仅 opacity
-数据刷新          变化项背景闪 #1C1C1C/0.04，不做整页骨架
+```css
+hover / focus    200ms
+toast            300ms（底部偏右，仅 opacity 渐变，无移动）
+切页淡入         250ms panelFade（从 opacity: 0 -> 1，微距 4px）
 ```
 
-`:focus-visible`：2px `#1C1C1C` 描边 + 2px offset，不用光晕。
-
-### 3.8 无障碍
-
-- 状态不只靠颜色（本来就单色，必须有文字）
-- 正文对比 ≥ 4.5:1（`#1C1C1C` on `#F9F8F6` 足够）
-- `/40` 只用于 label，不用于关键数字
-- 键盘可达
+无障碍：`@media (prefers-reduced-motion: reduce)` 关掉所有动画。
 
 ---
 
 ## §4 LaunchPage
 
 OAuth 回调中间页：
-
-1. 同一套 cream / ink token  
-2. 无 Google Fonts、无圆角、无阴影、无 Canvas  
-3. 居中：衬线标题 + sans 说明 + 一条返回管理台的 hover-underline 链接  
-4. **保留** `html.EscapeString(title)` 与 `html.EscapeString(message)`  
-5. 不要 py-40 仪式留白到看不清下一步
+1. 纯单色 cream / ink token；
+2. 无 Google Fonts、无圆角、无阴影、无 Canvas；
+3. 居中：衬线标题 + sans 说明 + 返回管理台的反相链接（`/direct-admin/#codebuddy`）；
+4. 保留 `html.EscapeString`。
 
 ---
 
-## §5 执行步骤
-
-1. §0 文案  
-2. 抽掉旧 `:root` 彩色 token 与 body 光晕  
-3. 按 §3 重写 CSS；保留全部 id 与 JS 函数  
-4. 重画账号行/chip/badge **仅 CSS + 必要 HTML 结构**，innerHTML 模板里的 class 语义不删  
-5. LaunchPage 跟随  
-6. `go build` / `go vet` / `go test`  
-7. 对照 `03-dom-contract.md` 点功能  
-
----
-
-## §6 验收
+## §5 验收
 
 ```bash
 cd go-codebuddy
@@ -191,25 +183,3 @@ grep -c "escapeHtml" internal/admin/page.go            # ≥ 10
 grep -c "border-radius:999px" internal/admin/page.go   # 0
 grep -cE "#e88a4a|#5ec4a8|#e63946" internal/admin/page.go  # 0
 ```
-
-人工：
-
-1. 1366×768 首屏能看到四项指标（登录 / Credits / 启用 / 成败）  
-2. 3 秒内找到「刷新 Token」  
-3. 断网打开，系统字体不塌  
-4. OAuth / 号池 / 模型 / 复制 / 生成 Key 逐项可点  
-5. 去色截图仍有层级（单色下必须靠字号/字重/线）  
-6. 与产品页并排：同一本杂志，不是深浅两套皮  
-
----
-
-## §7 失败模式
-
-| 模式 | 表现 | 规避 |
-|---|---|---|
-| 换汤不换药 | 奶油底但仍留橙青光晕 | grep 旧色值 |
-| 管理台做成产品页 | 指标被 py-40 推到三屏外 | §3.2 密度 |
-| 用红表示删除 | 违反单色 | 二次确认 + 反相 hover |
-| 改了 id | 按钮无反应 | H3 |
-| 反引号 | 编译失败 | H1 |
-| 漏 escapeHtml | XSS | H4 |

@@ -6,6 +6,19 @@
 
 ---
 
+## v0.3.9 · 2026-09-03 · 管理台章节切页
+
+### 管理台
+
+- **Editorial 四章节切页**：概览与监控 / 账号池与授权 / 客户端接入 / 模型与快照，避免单页堆叠。
+- URL hash 联动：`#codebuddy` → 账号池与授权；`#client-config` → 客户端接入（OAuth 返回路径可用）。
+- 概览说明与号池冷却语义对齐（429 → 2min，111xx → 5min，全冷却降级选最早恢复者）。
+- DOM id / JS API / 后端协议仍零变更。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.9
+
+---
+
 ## v0.3.8 · 2026-09-03 · Editorial 视觉改版
 
 ### 视觉与排版
