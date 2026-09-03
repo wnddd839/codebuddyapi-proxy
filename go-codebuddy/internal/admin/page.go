@@ -14,254 +14,227 @@ func PageHTML() string {
 <title>CodeBuddy Proxy · Console</title>
 <style>
 :root{
-  --bg:#0e1110;
-  --bg-elev:#161b19;
-  --bg-input:#1c2220;
-  --ink:#f2efe6;
-  --ink-dim:#9aa39a;
-  --ink-soft:#9aa39a;
-  --muted:#9aa39a;
-  --line:rgba(242,239,230,.10);
-  --line-soft:rgba(242,239,230,.06);
-  --accent:#e88a4a;
-  --teal:#5ec4a8;
-  --teal-deep:#5ec4a8;
-  --warn:#d4a24c;
-  --danger:#c9564a;
-  --ok:#5ec4a8;
-  --bad:#c9564a;
-  --sans:"Inter",system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-  --ease-micro:ease-out;
-  --ease-comp:cubic-bezier(.32,.72,0,1);
-  --ease-toast:cubic-bezier(.22,1,.36,1);
-  --r-btn:6px;
-  --r-card:8px;
+  --bg:#F9F8F6;
+  --fg:#1C1C1C;
+  --fg-80:rgba(28,28,28,.80);
+  --fg-60:rgba(28,28,28,.60);
+  --fg-40:rgba(28,28,28,.40);
+  --fg-20:rgba(28,28,28,.20);
+  --fg-10:rgba(28,28,28,.10);
+  --invert-bg:#1C1C1C;
+  --invert-fg:#F9F8F6;
+  --display:Georgia,"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Noto Serif SC",serif;
+  --sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
 body{
   font-family:var(--sans);
-  font-size:14px;line-height:1.6;
-  color:var(--ink);
+  font-size:14px;line-height:1.625;
+  color:var(--fg);
   background:var(--bg);
-  letter-spacing:.01em;
-  position:relative;
+  letter-spacing:-.01em;
 }
-body::before{
-  content:"";
-  position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:
-    linear-gradient(rgba(242,239,230,.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(242,239,230,.028) 1px, transparent 1px);
-  background-size:72px 72px;
-  mask-image:radial-gradient(ellipse 85% 75% at 50% 15%, #000 8%, transparent 72%);
-}
-body::after{
-  content:"";
-  position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:
-    radial-gradient(ellipse 48% 38% at 92% 6%, rgba(232,138,74,.11), transparent 55%),
-    radial-gradient(ellipse 42% 34% at 4% 94%, rgba(94,196,168,.07), transparent 52%);
-}
-a{color:inherit}
-.shell{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:20px 24px 64px}
+a{color:inherit;text-decoration:none}
+.shell{max-width:1200px;margin:0 auto;padding:0 24px 64px}
 .topbar{
+  position:sticky;top:0;z-index:50;
   display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
-  height:auto;min-height:56px;margin:0 0 20px;padding:0 0 14px;
-  background:transparent;border:0;border-bottom:1px solid var(--line);
-  border-radius:0;box-shadow:none;
+  min-height:58px;padding:0 0 16px;margin-bottom:32px;
+  background:rgba(249,248,246,.90);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--fg-10);
 }
-.brand{display:flex;align-items:center;gap:12px;min-width:0}
-.mark{
-  width:28px;height:28px;border-radius:6px;flex:none;
-  border:1px solid var(--line);
-  background:
-    radial-gradient(circle at 30% 35%, rgba(232,138,74,.35), transparent 55%),
-    radial-gradient(circle at 70% 65%, rgba(94,196,168,.25), transparent 50%),
-    #121816;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+.brand{display:flex;align-items:baseline;gap:12px}
+.brand strong{
+  font-family:var(--display);font-size:18px;font-weight:400;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--fg);
 }
-.brand-copy{min-width:0}
-.brand-copy strong{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em}
-.brand-copy span{display:block;font-size:12px;color:var(--ink-dim);letter-spacing:0}
-.pillrow{display:flex;gap:0;flex-wrap:wrap;align-items:center;color:var(--ink-dim);font-size:12px}
-.pill{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:0;border-radius:0;font-size:12px;font-weight:500;
-  background:transparent;border:0;color:var(--ink-dim);
+.brand span{
+  font-family:var(--sans);font-size:11px;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--fg-40);
 }
-.pill + .pill::before{content:"·";margin:0 10px;color:rgba(242,239,230,.28);font-weight:400}
-.pill .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:none}
-.pill .dot.warn{background:var(--warn);box-shadow:none}
-.pill .dot.bad{background:var(--danger);box-shadow:none}
+.mark{display:none}
+.pillrow{
+  display:flex;align-items:center;gap:0;
+  font-family:var(--sans);font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--fg-60);
+}
+.pill{display:inline-flex;align-items:center;gap:6px}
+.pill + .pill::before{content:"·";margin:0 10px;color:var(--fg-40)}
+.pill .dot{
+  width:6px;height:6px;background:var(--fg);border:1px solid var(--fg);
+}
+.pill .dot.bad{background:transparent;border:1px solid var(--fg-40)}
 .hero{
-  display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-bottom:16px;
+  display:grid;grid-template-columns:1.2fr .8fr;gap:24px;margin-bottom:24px;
 }
 @media (max-width:1024px){.hero{grid-template-columns:1fr}}
 .panel{
-  position:relative;border-radius:var(--r-card);padding:0;
-  background:color-mix(in srgb, var(--bg-elev) 90%, transparent);
-  border:1px solid var(--line);box-shadow:none;
+  border:1px solid var(--fg-10);background:transparent;
+  padding:24px;transition:border-color 200ms ease;
 }
-.panel-inner{
-  height:100%;border-radius:var(--r-card);background:transparent;
-  border:0;padding:16px;box-shadow:none;
-}
+.panel:hover{border-color:var(--fg-40)}
+.panel-inner{height:100%}
 .eyebrow{
-  display:inline-flex;align-items:center;gap:8px;
-  padding:0;border-radius:0;margin-bottom:10px;
-  font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--ink-dim);background:transparent;border:0;
+  font-size:11px;font-family:var(--sans);letter-spacing:.2em;text-transform:uppercase;
+  color:var(--fg-40);margin-bottom:8px;
 }
 h1{
-  margin:0 0 8px;font-size:clamp(22px,3vw,28px);line-height:1.2;
-  letter-spacing:-.02em;font-weight:650;max-width:18ch;
+  margin:0 0 8px;font-family:var(--display);font-weight:400;letter-spacing:-.02em;
+  font-size:clamp(24px,3vw,32px);color:var(--fg);
 }
-.lede{margin:0;color:var(--ink-dim);font-size:13px;line-height:1.55;max-width:48ch}
+.lede{margin:0;color:var(--fg-60);font-size:13.5px;line-height:1.6;max-width:52ch}
 .metrics{
-  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:16px;
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:20px;
 }
 @media (max-width:980px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:720px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.metric{
-  padding:12px;border-radius:var(--r-card);
-  background:color-mix(in srgb, var(--bg-input) 92%, transparent);
-  border:1px solid var(--line-soft);
+.metric{padding:14px;border:1px solid var(--fg-10);background:transparent}
+.metric .k{font-size:11px;font-family:var(--sans);letter-spacing:.15em;text-transform:uppercase;color:var(--fg-40)}
+.metric .v{
+  margin-top:8px;font-family:var(--mono);font-size:22px;font-weight:400;
+  letter-spacing:-.02em;color:var(--fg);text-align:right;
 }
-.metric .k{font-size:11px;color:var(--ink-dim);letter-spacing:.04em;text-transform:uppercase;font-weight:600}
-.metric .v{margin-top:6px;font-family:var(--mono);font-size:20px;letter-spacing:-.02em;font-weight:500;text-align:right}
-.metric .v.sm{font-size:13px;line-height:1.35}
+.metric .v.sm{font-size:13px;line-height:1.4}
 .section-head{
   display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;
-  margin:0 0 12px;
+  margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid var(--fg-10);
 }
-.section-head h2{margin:0;font-size:15px;letter-spacing:-.01em;font-weight:600}
-.section-head p{margin:4px 0 0;color:var(--ink-dim);font-size:12px}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.btn,.linkbtn,button,select,input{font:inherit}
+.section-head h2{
+  margin:0;font-family:var(--display);font-size:18px;font-weight:400;
+  letter-spacing:-.01em;color:var(--fg);
+}
+.section-head p{margin:4px 0 0;color:var(--fg-60);font-size:12px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
 button,.btn,.linkbtn{
-  appearance:none;border:0;cursor:pointer;
+  appearance:none;border:1px solid var(--fg-20);background:transparent;
+  color:var(--fg-80);cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
-  padding:8px 12px;border-radius:var(--r-btn);font-weight:600;font-size:13px;
-  transition:background 120ms var(--ease-micro), color 120ms var(--ease-micro), border-color 120ms var(--ease-micro), transform 120ms var(--ease-micro);
+  padding:8px 16px;font-family:var(--sans);font-size:12px;
+  letter-spacing:.06em;text-transform:uppercase;
+  transition:color 200ms ease, border-color 200ms ease, background-color 200ms ease;
 }
-button:active,.btn:active,.linkbtn:active{transform:scale(.98)}
+button:hover,.btn:hover,.linkbtn:hover{
+  color:var(--fg);border-color:var(--fg);background:rgba(28,28,28,.03);
+}
+button:active,.btn:active,.linkbtn:active{opacity:.85}
 button:focus-visible,.btn:focus-visible,.linkbtn:focus-visible,select:focus-visible,input:focus-visible{
-  outline:2px solid var(--accent);outline-offset:2px;
+  outline:2px solid var(--fg);outline-offset:2px;
 }
-button.primary,.btn.primary{
-  color:#0e1110;background:var(--accent);box-shadow:none;
+button.primary,.btn.primary,button.teal{
+  background:var(--invert-bg);color:var(--invert-fg);border-color:var(--invert-bg);font-weight:500;
 }
-button.primary:hover{background:#f09a5c}
-button.teal{
-  color:#0e1110;background:var(--teal);box-shadow:none;
+button.primary:hover,.btn.primary:hover,button.teal:hover{
+  background:var(--fg);color:var(--invert-fg);border-color:var(--fg);opacity:.9;
 }
-button.teal:hover{filter:brightness(1.06)}
-button.ghost,.linkbtn{
-  color:var(--ink-dim);background:transparent;border:1px solid var(--line);
-}
-button.ghost:hover,.linkbtn:hover{color:var(--ink);border-color:rgba(242,239,230,.22);background:rgba(242,239,230,.03)}
-button.danger{
-  color:var(--ink-dim);background:transparent;border:1px solid var(--line);box-shadow:none;
-}
-button.danger:hover{color:var(--danger);border-color:rgba(201,86,74,.55);background:rgba(201,86,74,.08)}
-.linkbtn{text-decoration:none}
-.field-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin:4px 0 14px}
+button.ghost,.linkbtn{background:transparent;color:var(--fg-80);border-color:var(--fg-20)}
+button.danger{color:var(--fg-60);border-color:var(--fg-20)}
+button.danger:hover{background:var(--invert-bg);color:var(--invert-fg);border-color:var(--invert-bg)}
+.field-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin:8px 0 16px}
 @media (max-width:640px){.field-grid{grid-template-columns:1fr}}
-label{display:block;font-size:12px;font-weight:600;color:var(--ink-dim);margin:0 0 6px}
+label{
+  display:block;font-size:11px;font-family:var(--sans);letter-spacing:.18em;
+  text-transform:uppercase;color:var(--fg-40);margin-bottom:6px;
+}
 select,input{
-  width:100%;padding:10px 12px;border-radius:var(--r-btn);
-  border:1px solid var(--line);background:var(--bg-input);color:var(--ink);
-  outline:none;transition:border-color 120ms var(--ease-micro);
+  width:100%;padding:8px 0;border:none;border-bottom:1px solid var(--fg-20);
+  background:transparent;color:var(--fg);font-family:var(--sans);font-size:14px;
+  outline:none;transition:border-color 200ms ease;
 }
-select:focus,input:focus{border-color:rgba(232,138,74,.55);box-shadow:none}
+select:focus,input:focus{border-bottom-color:var(--fg)}
 .oauth-status{
-  margin-top:12px;padding:12px;border-radius:var(--r-card);
-  background:var(--bg-input);border:1px solid var(--line-soft);
+  margin-top:16px;padding:12px 14px;border:1px solid var(--fg-10);background:transparent;
 }
-.oauth-status .title{font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em}
-.oauth-status .msg{font-size:13px;line-height:1.45;min-height:1.45em}
-.stack{display:grid;gap:10px}
+.oauth-status .title{
+  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--fg-40);margin-bottom:6px;
+}
+.oauth-status .msg{font-size:13px;line-height:1.5;color:var(--fg-80)}
+.stack{display:grid;gap:24px;margin-top:24px}
 .account{
-  display:grid;gap:8px;padding:12px 14px;border-radius:var(--r-card);
-  background:var(--bg-input);border:1px solid var(--line-soft);
+  display:grid;gap:10px;padding:18px;border:1px solid var(--fg-10);
+  background:transparent;transition:border-color 200ms ease;
 }
-.account-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
-.account-title{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
-.account-title strong{font-size:13px;letter-spacing:-.01em;font-weight:600}
+.account:hover{border-color:var(--fg-40)}
+.account-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
+.account-title{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.account-title strong{
+  font-family:var(--display);font-size:16px;font-weight:400;color:var(--fg);letter-spacing:-.01em;
+}
 .badge{
-  display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;
-  font-size:11px;font-weight:600;border:1px solid var(--line);background:transparent;color:var(--ink-dim);
+  display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--fg-20);
+  font-size:10.5px;font-family:var(--sans);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--fg-60);background:transparent;
 }
-.badge.site{color:var(--teal);background:rgba(94,196,168,.08);border-color:rgba(94,196,168,.22)}
-.badge.muted{color:var(--ink-dim);background:rgba(242,239,230,.04);border-color:var(--line-soft)}
-.seg{display:inline-flex;gap:4px;padding:3px;border-radius:var(--r-btn);background:var(--bg-input);border:1px solid var(--line)}
-.seg button{border:0;background:transparent;color:var(--ink-dim);padding:7px 12px;border-radius:var(--r-btn);cursor:pointer;font:inherit}
-.seg button.active{background:rgba(94,196,168,.16);color:var(--ink);box-shadow:none}
-.seg-hint{margin:8px 0 0;color:var(--ink-dim);font-size:12px}
-.badge.on{color:var(--ok);background:rgba(94,196,168,.08);border-color:rgba(94,196,168,.22)}
-.badge.off{color:var(--danger);background:rgba(201,86,74,.08);border-color:rgba(201,86,74,.22)}
-.meta{color:var(--ink-dim);font-size:12px;line-height:1.5}
-.meta code, .mono{font-family:var(--mono);font-size:12px}
-.err{margin-top:2px;color:var(--danger);font-size:12px}
+.badge.site{border-color:var(--fg-40);color:var(--fg)}
+.badge.muted{border-color:var(--fg-10);color:var(--fg-40)}
+.badge.on{border-color:var(--fg);color:var(--fg);font-weight:500}
+.badge.off{border-color:var(--fg-20);color:var(--fg-40)}
+.seg{display:inline-flex;gap:0;border:1px solid var(--fg-20)}
+.seg button{
+  border:none;border-right:1px solid var(--fg-20);background:transparent;color:var(--fg-60);
+  padding:6px 14px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
+}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--invert-bg);color:var(--invert-fg);font-weight:500}
+.seg-hint{margin:10px 0 16px;color:var(--fg-40);font-size:12px}
+.meta{color:var(--fg-60);font-size:12.5px;line-height:1.5}
+.meta code,.mono{font-family:var(--mono);font-size:12px}
+.err{margin-top:4px;color:var(--fg);font-family:var(--mono);font-size:12px;border-left:2px solid var(--fg);padding-left:8px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{
-  padding:6px 10px;border-radius:var(--r-btn);font-size:12px;font-weight:500;
-  background:var(--bg-input);border:1px solid var(--line);color:var(--ink);
-  font-family:var(--mono);
+  padding:6px 12px;border:1px solid var(--fg-10);font-size:12px;font-family:var(--mono);
+  color:var(--fg);background:transparent;transition:border-color 200ms ease, font-style 500ms ease;
 }
+.chip.btnish{cursor:pointer}
+.chip.btnish:hover{border-color:var(--fg-40);font-style:italic}
 .empty{
-  padding:24px 16px;border-radius:var(--r-card);text-align:center;
-  border:1px dashed var(--line);color:var(--ink-dim);background:transparent;
+  padding:32px 16px;border:1px dashed var(--fg-20);text-align:center;color:var(--fg-40);
+  font-family:var(--sans);font-size:13px;
 }
-details.raw{
-  margin-top:8px;border-radius:var(--r-card);border:1px solid var(--line);background:var(--bg-input);overflow:hidden;
-}
+details.raw{margin-top:12px;border:1px solid var(--fg-10);background:transparent}
 details.raw summary{
-  cursor:pointer;list-style:none;padding:10px 12px;font-size:12px;font-weight:600;color:var(--ink-dim);
+  cursor:pointer;list-style:none;padding:10px 14px;font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--fg-40);font-family:var(--sans);transition:color 200ms ease;
 }
+details.raw summary:hover{color:var(--fg)}
 details.raw summary::-webkit-details-marker{display:none}
 pre{
-  margin:0;padding:0 12px 12px;white-space:pre-wrap;word-break:break-word;
-  font-family:var(--mono);font-size:11.5px;line-height:1.5;color:#c8c4b8;
+  margin:0;padding:0 14px 14px;white-space:pre-wrap;word-break:break-word;
+  font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--fg-80);
   max-height:280px;overflow:auto;
 }
-.footer-note{display:none}
-.copyline{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
-.copyline input{font-family:var(--mono);font-size:12px}
-.secret-hint{margin-top:8px;font-size:12px;color:var(--ink-dim);line-height:1.45}
+.copyline{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.copyline input{font-family:var(--mono);font-size:12.5px}
+.secret-hint{margin-top:12px;font-size:12px;color:var(--fg-40);line-height:1.5}
 .toast{
-  position:fixed;right:18px;bottom:18px;z-index:40;min-width:180px;max-width:min(420px,92vw);
-  padding:12px 14px;border-radius:var(--r-card);background:var(--bg-elev);color:var(--ink);font-size:13px;font-weight:600;
-  border:1px solid var(--line);box-shadow:0 12px 28px -18px rgba(0,0,0,.55);
-  opacity:0;transform:translateY(8px);
-  transition:opacity 300ms var(--ease-toast), transform 300ms var(--ease-toast);pointer-events:none;
+  position:fixed;right:24px;bottom:24px;z-index:100;min-width:180px;max-width:min(420px,92vw);
+  padding:12px 20px;background:var(--invert-bg);color:var(--invert-fg);font-size:12px;
+  letter-spacing:.08em;text-transform:uppercase;font-family:var(--sans);font-weight:500;
+  border:1px solid var(--invert-bg);opacity:0;pointer-events:none;transition:opacity 300ms ease;
 }
-.toast.show{opacity:1;transform:translateY(0)}
-.toast.err{background:rgba(201,86,74,.16);border-color:rgba(201,86,74,.4);color:#f0c2bc}
-.chip.btnish{cursor:pointer}
-.chip.btnish:hover{border-color:rgba(232,138,74,.4);background:rgba(232,138,74,.08)}
-.usage-line{margin-top:2px;font-size:12px}
-.usage-line .pill{display:inline-flex;padding:2px 8px;border-radius:999px;font-weight:600;font-size:11px;border:1px solid var(--line)}
-.usage-line .pill.good{color:var(--ok);background:rgba(94,196,168,.08);border-color:rgba(94,196,168,.22)}
-.usage-line .pill.warn{color:var(--warn);background:rgba(212,162,76,.10);border-color:rgba(212,162,76,.25)}
-.usage-line .pill.bad{color:var(--danger);background:rgba(201,86,74,.08);border-color:rgba(201,86,74,.22)}
-.account .actions button{padding:6px 10px;font-size:12px;font-weight:500;color:var(--ink-dim);background:transparent;border:1px solid var(--line)}
-.account .actions button:hover{color:var(--ink);border-color:rgba(242,239,230,.22)}
+.toast.show{opacity:1}
+.toast.err{background:var(--invert-bg);color:var(--invert-fg);border-color:var(--invert-bg)}
+.usage-line{margin-top:4px;font-size:12px}
+.usage-line .pill{display:inline-flex;padding:2px 8px;font-family:var(--mono);font-size:11px;border:1px solid var(--fg-20);color:var(--fg)}
+.usage-line .pill.good{border-color:var(--fg);color:var(--fg);font-weight:500}
+.usage-line .pill.warn{border-color:var(--fg-40);color:var(--fg-80)}
+.usage-line .pill.bad{border-color:var(--fg-20);color:var(--fg-40)}
+.account .actions button{padding:4px 10px;font-size:11px;color:var(--fg-60);border-color:var(--fg-10)}
+.account .actions button:hover{color:var(--fg);border-color:var(--fg-40)}
 #statusBox,#oauthBox,#modelsBox{display:none}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+}
 </style>
-
 </head>
 <body>
 <div class="shell">
   <header class="topbar">
     <div class="brand">
       <div class="mark" aria-hidden="true"></div>
-      <div class="brand-copy">
-        <strong>CodeBuddy Proxy</strong>
-        <span>protocol_direct · OpenAI-compatible</span>
-      </div>
+      <strong>CodeBuddy</strong>
+      <span>protocol_direct</span>
     </div>
     <div class="pillrow">
       <span class="pill"><span class="dot" id="healthDot"></span><span id="healthText">检查中</span></span>
@@ -283,7 +256,7 @@ pre{
           <div class="metric"><div class="k">成功 / 失败</div><div class="v sm" id="mSF">0 / 0</div></div>
           <div class="metric"><div class="k">总 Tokens</div><div class="v sm" id="mTokens">0</div></div>
         </div>
-        <div class="actions" style="margin-top:16px">
+        <div class="actions" style="margin-top:20px">
           <button class="ghost" id="btnRefresh" type="button">刷新状态</button>
           <button class="ghost" id="btnModels" type="button">拉取模型</button>
         </div>
@@ -328,52 +301,51 @@ pre{
     </section>
   </div>
 
-
   <section class="panel" id="client-config">
-      <div class="panel-inner">
-        <div class="section-head">
-          <div>
-            <h2>OpenAI 兼容接入</h2>
-            <p>给下游客户端填 Base URL + API Key；不会暴露 CodeBuddy OAuth token。</p>
-          </div>
-          <div class="actions">
-            <button class="ghost" id="btnRefreshClient" type="button">刷新接入信息</button>
-            <button class="teal" id="btnGenerateKey" type="button">生成 API Key</button>
-          </div>
+    <div class="panel-inner">
+      <div class="section-head">
+        <div>
+          <h2>OpenAI 兼容接入</h2>
+          <p>给下游客户端填 Base URL + API Key；不会暴露 CodeBuddy OAuth token。</p>
         </div>
-        <div class="field-grid" style="grid-template-columns:1fr 1fr">
-          <div>
-            <label for="openAiBaseUrl">Base URL</label>
-            <div class="copyline">
-              <input id="openAiBaseUrl" readonly placeholder="加载中…"/>
-              <button class="ghost" id="copyBaseUrl" type="button">复制</button>
-            </div>
-          </div>
-          <div>
-            <label for="openAiChatUrl">Chat Completions</label>
-            <div class="copyline">
-              <input id="openAiChatUrl" readonly placeholder="加载中…"/>
-              <button class="ghost" id="copyChatUrl" type="button">复制</button>
-            </div>
-          </div>
-          <div>
-            <label for="openAiApiKey">API Key（网关层）</label>
-            <div class="copyline">
-              <input id="openAiApiKey" class="secret-input" type="password" readonly placeholder="未配置"/>
-              <button class="ghost" id="copyApiKey" type="button">复制</button>
-            </div>
-          </div>
-          <div>
-            <label for="openAiModel">推荐模型</label>
-            <div class="copyline">
-              <input id="openAiModel" readonly value="auto"/>
-              <button class="ghost" id="copyModel" type="button">复制</button>
-            </div>
-          </div>
+        <div class="actions">
+          <button class="ghost" id="btnRefreshClient" type="button">刷新接入信息</button>
+          <button class="teal" id="btnGenerateKey" type="button">生成 API Key</button>
         </div>
-        <div class="secret-hint" id="clientConfigHint">API Key 点击复制时才会读取明文。生成的新 Key 仅当前进程生效，重启需写入 CODEBUDDY_PROXY_API_KEY。</div>
       </div>
-    </section>
+      <div class="field-grid" style="grid-template-columns:1fr 1fr">
+        <div>
+          <label for="openAiBaseUrl">Base URL</label>
+          <div class="copyline">
+            <input id="openAiBaseUrl" readonly placeholder="加载中…"/>
+            <button class="ghost" id="copyBaseUrl" type="button">复制</button>
+          </div>
+        </div>
+        <div>
+          <label for="openAiChatUrl">Chat Completions</label>
+          <div class="copyline">
+            <input id="openAiChatUrl" readonly placeholder="加载中…"/>
+            <button class="ghost" id="copyChatUrl" type="button">复制</button>
+          </div>
+        </div>
+        <div>
+          <label for="openAiApiKey">API Key（网关层）</label>
+          <div class="copyline">
+            <input id="openAiApiKey" class="secret-input" type="password" readonly placeholder="未配置"/>
+            <button class="ghost" id="copyApiKey" type="button">复制</button>
+          </div>
+        </div>
+        <div>
+          <label for="openAiModel">推荐模型</label>
+          <div class="copyline">
+            <input id="openAiModel" readonly value="auto"/>
+            <button class="ghost" id="copyModel" type="button">复制</button>
+          </div>
+        </div>
+      </div>
+      <div class="secret-hint" id="clientConfigHint">API Key 点击复制时才会读取明文。生成的新 Key 仅当前进程生效，重启需写入 CODEBUDDY_PROXY_API_KEY。</div>
+    </div>
+  </section>
 
   <div class="stack">
     <section class="panel">
@@ -426,7 +398,6 @@ pre{
       </div>
     </section>
   </div>
-
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -567,7 +538,6 @@ function renderModels(data){
   });
 }
 
-
 function normalizeSite(site){
   site = String(site||'').toLowerCase().trim();
   if (site === 'domestic' || site === 'cn' || site === 'china' || site === 'internal') return 'domestic';
@@ -594,7 +564,6 @@ async function switchPoolSite(site){
   const data = await api('/direct-admin/api/pool-site', {method:'POST', body: JSON.stringify({site: site})});
   paintStatus(data);
   if (data.note) showToast(data.note);
-  // Refresh models for the new region primary account.
   refreshModels().catch(function(){});
   return data;
 }
@@ -620,14 +589,12 @@ function paintStatus(data){
   const poolSite = normalizeSite(data.poolSite || cfg.poolSite || cfg.site || 'global');
   $('pillSite').textContent = siteLabel(poolSite);
   paintPoolSite(poolSite, accounts);
-  // Keep OAuth login site aligned with active pool by default.
   if ($('site') && !$('site').dataset.userTouched) {
     $('site').value = poolSite === 'domestic' ? 'domestic' : 'global';
   }
   const activeEnabled = accounts.activeEnabledCount != null ? accounts.activeEnabledCount : enabledCount;
   $('mEnabled').textContent = String(activeEnabled);
   setHealth(!!data.ok, data.ok ? (loggedIn ? ('服务正常 · ' + siteLabel(poolSite) + '号池') : ('服务正常 · ' + siteLabel(poolSite) + '号池未登录')) : '状态异常');
-  // Auto-fetch balance for primary account once.
   if (primary && primary.id && primary.hasCredentials && !usageByAccount[primary.id] && !paintStatus._usageKick) {
     paintStatus._usageKick = true;
     fetchAccountUsage(primary.id, true).catch(function(){});
@@ -661,7 +628,6 @@ function paintOAuth(data){
   $('oauthBox').textContent = raw;
   $('oauthRaw').textContent = raw;
 }
-
 
 let clientConfig = { apiKey: '', baseUrl: '', chatCompletionsUrl: '', recommendedModel: 'auto' };
 function showToast(msg, kind){
@@ -766,7 +732,6 @@ async function fetchAccountUsage(accountId, silent){
     usageByAccount[accountId] = { error: e.message || String(e) };
     if (!silent) showToast('查余额失败：' + (e.message || e), 'error');
   }
-  // refresh UI from last status snapshot by re-pulling status
   await refreshStatus();
 }
 async function onAccountAction(ev){
@@ -819,11 +784,9 @@ setInterval(function(){ refreshStatus().catch(function(){}); }, 15000);
 }
 
 func LaunchPage(message string, success bool) string {
-	tone := "bad"
-	title := "认证未完成"
+	stateLabel := "认证未完成"
 	if success {
-		tone = "ok"
-		title = "认证成功"
+		stateLabel = "认证成功"
 	}
 	return `<!doctype html>
 <html lang="zh-CN">
@@ -833,42 +796,49 @@ func LaunchPage(message string, success bool) string {
 <title>CodeBuddy OAuth</title>
 <style>
 :root{
-  --bg:#0e1110;--bg-elev:#161b19;--ink:#f2efe6;--ink-dim:#9aa39a;
-  --line:rgba(242,239,230,.10);--accent:#e88a4a;--teal:#5ec4a8;
-  --ok:#5ec4a8;--bad:#c9564a;
-  --sans:"Inter",system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --bg:#F9F8F6;
+  --fg:#1C1C1C;
+  --fg-60:rgba(28,28,28,0.60);
+  --fg-20:rgba(28,28,28,0.20);
+  --display:Georgia,"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Noto Serif SC",serif;
+  --sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
 }
 *{box-sizing:border-box}
 body{
   margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;
-  font-family:var(--sans);font-size:14px;line-height:1.6;color:var(--ink);
+  font-family:var(--sans);font-size:14px;line-height:1.625;color:var(--fg);
   background:var(--bg);
 }
 .card{
-  width:min(520px,100%);border-radius:8px;padding:0;
-  background:var(--bg-elev);border:1px solid var(--line);box-shadow:none;
+  width:min(520px,100%);padding:32px;
+  background:transparent;border:1px solid var(--fg-20);
 }
-.inner{border-radius:8px;background:transparent;border:0;padding:24px}
-.mark{width:28px;height:28px;border-radius:6px;margin-bottom:14px;background:var(--accent)}
-h1{margin:0 0 8px;font-size:22px;letter-spacing:-.02em;font-weight:650}
-p{margin:0 0 16px;line-height:1.55;color:var(--ink-dim);font-size:13px}
-.ok{color:var(--ok);font-weight:600}
-.bad{color:var(--bad);font-weight:600}
+.meta{
+  font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-60);margin-bottom:12px;
+}
+h1{
+  margin:0 0 12px;font-family:var(--display);font-size:26px;letter-spacing:-.02em;font-weight:400;color:var(--fg);
+}
+p{
+  margin:0 0 24px;color:var(--fg-60);font-size:14px;line-height:1.6;
+}
 a{
   display:inline-flex;align-items:center;justify-content:center;
-  padding:8px 12px;border-radius:6px;text-decoration:none;font-weight:600;font-size:13px;
-  color:#0e1110;background:var(--teal);
+  padding:10px 20px;text-decoration:none;font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--bg);background:var(--fg);border:1px solid var(--fg);
+  transition:background .2s, color .2s;
 }
-a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a:hover{background:var(--fg);color:var(--bg);opacity:.9}
+a:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 </style>
 </head>
 <body>
-<div class="card"><div class="inner">
-  <div class="mark" aria-hidden="true"></div>
-  <h1>` + html.EscapeString(title) + `</h1>
-  <p class="` + tone + `">` + html.EscapeString(message) + `</p>
+<div class="card">
+  <div class="meta">CodeBuddy Proxy · OAuth</div>
+  <h1>` + html.EscapeString(stateLabel) + `</h1>
+  <p>` + html.EscapeString(message) + `</p>
   <a href="/direct-admin/#codebuddy">返回管理台</a>
-</div></div>
+</div>
 </body>
 </html>`
 }

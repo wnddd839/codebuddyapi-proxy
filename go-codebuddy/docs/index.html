@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CodeBuddy Proxy — CodeBuddy 的 OpenAI 兼容反代</title>
+  <title>CodeBuddy Proxy — 把 CodeBuddy 变成 /v1</title>
   <meta name="description" content="CodeBuddy Proxy：Go 原生 CodeBuddy 反代。协议直连、OAuth、账号池、真实 Credits、OpenAI 兼容 /v1，可接 NewAPI。" />
   <meta property="og:title" content="CodeBuddy Proxy" />
   <meta property="og:description" content="把 CodeBuddy 变成 OpenAI 兼容的 /v1 渠道。只做 CodeBuddy，不做多厂商聚合。" />
@@ -15,423 +15,541 @@
   <link rel="icon" href="./logo.svg" type="image/svg+xml" />
   <style>
     :root {
-      --bg: #0e1110;
-      --bg-elev: #161b19;
-      --ink: #f2efe6;
-      --muted: #9aa39a;
-      --line: rgba(242, 239, 230, 0.1);
-      --accent: #e88a4a;
-      --teal: #5ec4a8;
-      --max: 1080px;
-      --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", Georgia, serif;
-      --sans: "Inter", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --bg: #F9F8F6;
+      --fg: #1C1C1C;
+      --fg-80: rgba(28, 28, 28, 0.80);
+      --fg-60: rgba(28, 28, 28, 0.60);
+      --fg-40: rgba(28, 28, 28, 0.40);
+      --fg-20: rgba(28, 28, 28, 0.20);
+      --fg-10: rgba(28, 28, 28, 0.10);
+      --invert-bg: #1C1C1C;
+      --invert-fg: #F9F8F6;
+      --display: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", "Noto Serif SC", serif;
+      --sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --max: 1240px;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
     html { scroll-behavior: smooth; }
     body {
       font-family: var(--sans);
       background: var(--bg);
-      color: var(--ink);
-      line-height: 1.55;
-      overflow-x: hidden;
+      color: var(--fg);
+      line-height: 1.625;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+      -webkit-font-smoothing: antialiased;
     }
-    #ambient {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-    }
-    main, footer, .nav { position: relative; z-index: 1; }
     a { color: inherit; text-decoration: none; }
-    .wrap { width: min(100% - 2rem, var(--max)); margin-inline: auto; }
+    .wrap {
+      width: min(100% - 3rem, var(--max));
+      margin-inline: auto;
+    }
 
+    /* 刊头导航 (Sticky Topbar) */
     .nav {
       position: sticky;
       top: 0;
-      z-index: 20;
-      padding: 1.25rem 0;
-      /* fallback first, then progressive enhancement */
-      background: rgba(14, 17, 16, .82);
-      background: color-mix(in srgb, var(--bg) 82%, transparent);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid transparent;
-      transition: border-color .25s ease;
+      z-index: 50;
+      padding: 18px 0;
+      background: rgba(249, 248, 246, 0.90);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--fg-10);
     }
-    .nav.is-stuck { border-bottom-color: var(--line); }
     .nav-inner {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 1.5rem;
     }
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 0.65rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
+      gap: 0.75rem;
     }
-    .brand img { width: 28px; height: 28px; }
+    .brand img {
+      width: 20px;
+      height: 20px;
+      display: block;
+    }
+    .brand-title {
+      font-family: var(--display);
+      font-size: 17px;
+      font-weight: 400;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--fg);
+    }
     .nav-links {
       display: flex;
-      gap: 1.1rem;
+      gap: 2rem;
       align-items: center;
-      color: var(--muted);
-      font-size: 0.88rem;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--fg-60);
+    }
+    .nav-links a:hover { color: var(--fg); }
+    .nav-cta {
+      border: 1px solid var(--fg) !important;
+      padding: 6px 14px;
+      color: var(--fg) !important;
       font-weight: 500;
+      transition: background 200ms ease, color 200ms ease;
     }
-    .nav-links a:hover { color: var(--ink); }
-    .pill {
-      padding: 0.5rem 0.9rem;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      color: var(--ink) !important;
-      transition: border-color .2s, background .2s;
+    .nav-cta:hover {
+      background: var(--invert-bg);
+      color: var(--invert-fg) !important;
     }
-    .pill:hover { border-color: rgba(242,239,230,.35); background: rgba(255,255,255,.04); }
 
-    .hero {
+    /* 链接下划线微动效 */
+    .link-hover {
       position: relative;
-      min-height: min(78vh, 820px);
-      display: grid;
-      align-items: end;
-      padding: 4.5rem 0 3.25rem;
+      display: inline-block;
     }
-    .hero-panel {
-      max-width: 42rem;
-      padding: 2rem 2rem 2.1rem;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: linear-gradient(145deg, rgba(22,27,25,.86), rgba(14,17,16,.58));
-      box-shadow: 0 0 0 1px rgba(255,255,255,.03) inset, 0 24px 64px rgba(0,0,0,.35);
+    .link-hover::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -2px;
+      width: 100%;
+      height: 1px;
+      background: currentColor;
+      transform: scaleX(0);
+      transform-origin: 100% 50%;
+      transition: transform 250ms ease;
     }
-    .hero-plane { display: none; }
+    .link-hover:hover::after {
+      transform: scaleX(1);
+      transform-origin: 0% 50%;
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: clamp(64px, 12vh, 140px) 0 clamp(48px, 8vh, 96px);
+      border-bottom: 1px solid var(--fg-10);
+    }
+    .hero-kicker {
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--fg-40);
+      margin-bottom: 1.5rem;
+    }
     .hero h1 {
       font-family: var(--display);
-      font-weight: 600;
-      font-size: clamp(2.6rem, 6.5vw, 4.2rem);
-      line-height: 1.05;
-      letter-spacing: -0.03em;
-      max-width: 10ch;
-      margin-bottom: 1.15rem;
-      opacity: 0;
-      transform: translateY(24px);
-      animation: up .85s cubic-bezier(.22,1,.36,1) .08s forwards;
+      font-weight: 400;
+      font-size: clamp(3rem, 7.5vw, 6.2rem);
+      line-height: 1.02;
+      letter-spacing: -0.035em;
+      max-width: 14ch;
+      margin-bottom: 2rem;
+      color: var(--fg);
     }
-    .hero h1 span {
-      display: block;
-      color: var(--accent);
+    .hero h1 em {
       font-style: italic;
-      font-weight: 500;
+      font-family: var(--display);
+      font-weight: 400;
     }
     .hero-lead {
-      max-width: 32rem;
-      color: var(--muted);
-      font-size: clamp(1rem, 2vw, 1.15rem);
-      margin-bottom: 1.85rem;
-      opacity: 0;
-      transform: translateY(20px);
-      animation: up .85s cubic-bezier(.22,1,.36,1) .22s forwards;
+      max-width: 38rem;
+      color: var(--fg-60);
+      font-size: clamp(15px, 1.6vw, 18px);
+      line-height: 1.65;
+      margin-bottom: 2.5rem;
+      font-style: italic;
     }
     .hero-actions {
       display: flex;
       flex-wrap: wrap;
-      gap: .7rem;
-      opacity: 0;
-      transform: translateY(16px);
-      animation: up .85s cubic-bezier(.22,1,.36,1) .36s forwards;
+      gap: 1.25rem;
+      align-items: center;
     }
-    @keyframes up { to { opacity: 1; transform: none; } }
 
+    /* 按钮规范 */
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: .85rem 1.2rem;
-      border-radius: 999px;
-      font-weight: 600;
-      font-size: .92rem;
-      transition: transform .2s, background .2s, border-color .2s;
+      padding: 12px 28px;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 200ms ease, color 200ms ease, border-color 200ms ease;
     }
-    .btn:hover { transform: translateY(-1px); }
-    .btn-solid { background: var(--ink); color: var(--bg); }
-    .btn-solid:hover { background: #fff; }
-    .btn-line { border: 1px solid var(--line); color: var(--ink); }
-    .btn-line:hover { border-color: rgba(242,239,230,.4); }
+    .btn-solid {
+      background: var(--invert-bg);
+      color: var(--invert-fg);
+      border-color: var(--invert-bg);
+    }
+    .btn-solid:hover {
+      background: var(--fg);
+      border-color: var(--fg);
+      opacity: 0.9;
+    }
+    .btn-line {
+      background: transparent;
+      border-color: var(--fg-20);
+      color: var(--fg);
+    }
+    .btn-line:hover {
+      border-color: var(--fg);
+    }
 
+    /* Section 通用规范 */
     section {
-      padding: 5rem 0;
-      border-top: 1px solid var(--line);
+      padding: clamp(56px, 10vh, 110px) 0;
+      border-bottom: 1px solid var(--fg-10);
+    }
+    .section-head {
+      margin-bottom: 3.5rem;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 2rem;
+      align-items: baseline;
+    }
+    @media (max-width: 768px) {
+      .section-head { grid-template-columns: 1fr; gap: 0.75rem; }
+      .nav-links a:not(.nav-cta) { display: none; }
     }
     .kicker {
-      font-size: .72rem;
-      font-weight: 400;
-      letter-spacing: .14em;
+      font-size: 11px;
+      letter-spacing: 0.22em;
       text-transform: uppercase;
-      color: var(--teal);
-      margin-bottom: .75rem;
-      opacity: .85;
+      color: var(--fg-40);
     }
     .title {
       font-family: var(--display);
-      font-size: clamp(2rem, 4.2vw, 2.85rem);
-      line-height: 1.08;
-      letter-spacing: -0.03em;
-      margin-bottom: .75rem;
-      max-width: 14ch;
+      font-weight: 400;
+      font-size: clamp(28px, 3.5vw, 44px);
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+      color: var(--fg);
     }
     .desc {
-      color: var(--muted);
-      max-width: 34rem;
-      margin-bottom: 2.25rem;
-      font-size: 1.02rem;
+      color: var(--fg-60);
+      font-size: 15px;
+      max-width: 44rem;
+      line-height: 1.65;
     }
 
-    .rails { display: grid; gap: 0; border-top: 1px solid var(--line); }
-    .rail {
+    /* 12 栏特征网格 */
+    .features-grid {
       display: grid;
-      grid-template-columns: 1fr;
-      gap: .45rem;
-      padding: 1.35rem 0;
-      border-bottom: 1px solid var(--line);
-      transition: background .25s ease;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3rem 2.5rem;
     }
-    .rail:hover { background: rgba(255,255,255,.015); }
-    .rail h3 {
-      font-size: 1.05rem;
-      font-weight: 600;
-      margin-bottom: .3rem;
+    @media (max-width: 960px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .features-grid { grid-template-columns: 1fr; } }
+
+    .feature-item {
+      border-top: 1px solid var(--fg-10);
+      padding-top: 1.5rem;
+      transition: border-color 200ms ease;
+    }
+    .feature-item:hover {
+      border-top-color: var(--fg-40);
+    }
+    .feature-item:hover h3 {
+      font-style: italic;
+    }
+    .feature-item h3 {
+      font-family: var(--display);
+      font-weight: 400;
+      font-size: 20px;
       letter-spacing: -0.01em;
-      display: flex;
-      align-items: baseline;
-      gap: .6rem;
+      margin-bottom: 0.75rem;
+      color: var(--fg);
+      transition: font-style 300ms ease;
     }
-    /* thin teal tick replaces the numbered column (was an AI-layout default) */
-    .rail h3::before {
-      content: "";
-      flex: none;
-      width: 14px;
-      height: 2px;
-      background: var(--teal);
-      transform: translateY(-4px);
-      opacity: .7;
+    .feature-item p {
+      color: var(--fg-60);
+      font-size: 13.5px;
+      line-height: 1.65;
     }
-    .rail p { color: var(--muted); font-size: .95rem; max-width: 38rem; }
-
-    .split {
-      display: grid;
-      grid-template-columns: 1.05fr .95fr;
-      gap: 2.5rem;
-      align-items: center;
-    }
-    @media (max-width: 840px) {
-      .split { grid-template-columns: 1fr; }
-      .nav-links a:not(.pill) { display: none; }
+    .feature-item code {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg-80);
     }
 
-    .panel {
-      background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 1.25rem 1.3rem;
-      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-      font-size: .8rem;
-      line-height: 1.7;
-      color: #d8d3c6;
-      overflow-x: auto;
-    }
-    .panel .dim { color: #6f766f; }
-    .panel .hot { color: var(--accent); }
-
+    /* 下载表格 */
     .dl-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: .92rem;
-      margin-top: .5rem;
+      margin-top: 1.5rem;
     }
     .dl-table th, .dl-table td {
       text-align: left;
-      padding: .85rem 0;
-      border-bottom: 1px solid var(--line);
+      padding: 1.25rem 0;
+      border-bottom: 1px solid var(--fg-10);
     }
-    .dl-table th { color: var(--muted); font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
-    .dl-table a { color: var(--teal); text-decoration: underline; text-underline-offset: 3px; }
-    .dl-table a:hover { color: var(--ink); }
-
-    .note {
-      margin-top: 1.25rem;
-      padding: 1rem 1.1rem;
-      border-left: 3px solid var(--accent);
-      background: rgba(232,138,74,.08);
-      color: var(--muted);
-      font-size: .92rem;
-      max-width: 36rem;
+    .dl-table th {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--fg-40);
+      font-weight: 400;
     }
-    .note strong { color: var(--ink); font-weight: 600; }
-
-    .notice-section { border-top: 1px solid var(--line); }
-    .notice-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1px;
-      background: var(--line);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      overflow: hidden;
+    .dl-table tr:hover td {
+      border-bottom-color: var(--fg-40);
     }
-    .notice-card {
-      background: color-mix(in srgb, var(--bg) 94%, transparent);
-      padding: 1.5rem 1.4rem;
-    }
-    .notice-card h3 {
-      font-size: .95rem;
-      font-weight: 600;
-      margin-bottom: .6rem;
-      letter-spacing: -0.01em;
-    }
-    .notice-card p {
-      color: var(--muted);
-      font-size: .92rem;
-      line-height: 1.65;
-    }
-    .notice-card strong { color: var(--ink); font-weight: 600; }
-    .notice-foot {
-      margin-top: 1.5rem;
-      color: var(--muted);
-      font-size: .9rem;
-    }
-    .notice-foot a {
-      color: var(--teal);
+    .dl-table a {
+      font-family: var(--mono);
+      font-size: 13.5px;
+      color: var(--fg);
       text-decoration: underline;
       text-underline-offset: 3px;
     }
-    .notice-foot a:hover { color: var(--ink); }
-    @media (max-width: 840px) {
-      .notice-grid { grid-template-columns: 1fr; }
+    .dl-table a:hover {
+      color: var(--fg-60);
+    }
+    .dl-meta {
+      margin-top: 1.75rem;
+      font-size: 13px;
+      color: var(--fg-60);
+    }
+    .dl-meta a {
+      text-decoration: underline;
+      text-underline-offset: 3px;
     }
 
-    .cta {
-      background:
-        radial-gradient(ellipse 50% 80% at 100% 0%, rgba(232,138,74,.16), transparent 55%),
-        var(--bg);
+    /* 启动步骤 (三步跑起来) */
+    .start-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3.5rem;
+      align-items: start;
     }
-    .cta .title { max-width: 16ch; }
-    .cta-row { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 1.5rem; }
+    @media (max-width: 860px) { .start-split { grid-template-columns: 1fr; } }
 
+    .step-list {
+      display: grid;
+      gap: 2rem;
+    }
+    .step-item {
+      border-top: 1px solid var(--fg-10);
+      padding-top: 1.25rem;
+    }
+    .step-idx {
+      font-family: var(--display);
+      font-size: 18px;
+      font-style: italic;
+      color: var(--fg-40);
+      margin-bottom: 0.5rem;
+    }
+    .step-item h4 {
+      font-family: var(--display);
+      font-size: 17px;
+      font-weight: 400;
+      margin-bottom: 0.4rem;
+    }
+    .step-item p {
+      color: var(--fg-60);
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+
+    .code-panel {
+      border: 1px solid var(--fg-10);
+      background: transparent;
+      padding: 1.75rem;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.75;
+      color: var(--fg-80);
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .code-panel .dim { color: var(--fg-40); }
+    .code-panel .hot {
+      font-weight: 500;
+      color: var(--fg);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    /* 合规声明三卡片 */
+    .notice-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2.5rem;
+    }
+    @media (max-width: 860px) { .notice-grid { grid-template-columns: 1fr; } }
+    .notice-card {
+      border-top: 1px solid var(--fg-10);
+      padding-top: 1.5rem;
+    }
+    .notice-card h3 {
+      font-family: var(--display);
+      font-size: 18px;
+      font-weight: 400;
+      margin-bottom: 0.75rem;
+      color: var(--fg);
+    }
+    .notice-card p {
+      color: var(--fg-60);
+      font-size: 13.5px;
+      line-height: 1.65;
+    }
+
+    /* 结语 CTA */
+    .cta-section {
+      padding: clamp(64px, 12vh, 140px) 0;
+      border-bottom: none;
+    }
+    .cta-section h2 {
+      font-family: var(--display);
+      font-weight: 400;
+      font-size: clamp(32px, 5vw, 54px);
+      letter-spacing: -0.025em;
+      line-height: 1.1;
+      max-width: 18ch;
+      margin-bottom: 1.5rem;
+    }
+    .cta-section p {
+      color: var(--fg-60);
+      font-size: 15px;
+      max-width: 36rem;
+      margin-bottom: 2rem;
+    }
+
+    /* 反相页脚 */
     footer {
-      padding: 2rem 0 2.75rem;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: .85rem;
+      background: var(--invert-bg);
+      color: var(--invert-fg);
+      padding: 64px 0;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
-    .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .8rem; }
-    footer a { text-decoration: underline; text-underline-offset: 3px; }
-    footer a:hover { color: var(--ink); }
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 2rem;
+      flex-wrap: wrap;
+      align-items: center;
+      color: rgba(249, 248, 246, 0.60);
+    }
+    .footer-inner a {
+      color: var(--invert-fg);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
 
     @media (prefers-reduced-motion: reduce) {
-      #ambient { display: none; }
-      .hero-panel { background: var(--bg-elev); }
-      *, *::before, *::after { animation: none !important; transition: none !important; }
-      .hero h1, .hero-lead, .hero-actions { opacity: 1; transform: none; }
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
     }
   </style>
 </head>
 <body>
-  <canvas id="ambient" aria-hidden="true"></canvas>
+
+  <!-- 刊头导航 -->
   <header class="nav" id="nav">
     <div class="wrap nav-inner">
       <a class="brand" href="./">
-        <img src="./logo.svg" alt="" />
-        CodeBuddy Proxy
+        <img src="./logo.svg" alt="CodeBuddy Proxy" width="20" height="20" />
+        <span class="brand-title">CodeBuddy</span>
       </a>
       <nav class="nav-links" aria-label="导航">
-        <a href="#why">能力</a>
-        <a href="#download">下载</a>
-        <a href="#start">开始</a>
-        <a href="#notice">声明</a>
-        <a class="pill" href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">GitHub</a>
+        <a class="link-hover" href="#why">能力</a>
+        <a class="link-hover" href="#download">下载</a>
+        <a class="link-hover" href="#start">开始</a>
+        <a class="link-hover" href="#notice">声明</a>
+        <a class="nav-cta" href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">GitHub</a>
       </nav>
     </div>
   </header>
 
   <main>
+    <!-- Hero Section -->
     <section class="hero" aria-label="CodeBuddy Proxy">
-      <div class="wrap hero-panel">
-        <h1>CodeBuddy <span>Proxy</span></h1>
+      <div class="wrap">
+        <div class="hero-kicker">Protocol Direct Gateway · Issue No. 04</div>
+        <h1>把 CodeBuddy<br>变成 <em>/v1.</em></h1>
         <p class="hero-lead">
-          把你的 CodeBuddy 账号，变成任何 OpenAI 客户端都能直连的 <code>/v1</code> 渠道。
-          Go 单文件二进制，OAuth 登录后协议直连，不需要 <code>codebuddy --serve</code>。
+          把你的 CodeBuddy 账号，变成任何 OpenAI 客户端都能直连的 /v1 渠道。
+          Go 单文件二进制，OAuth 登录后协议直连，不需要 codebuddy --serve。
         </p>
         <div class="hero-actions">
-          <a class="btn btn-solid" href="#download">下载运行</a>
-          <a class="btn btn-line" href="https://github.com/wnddd839/codebuddyapi-proxy#快速开始" target="_blank" rel="noopener">快速开始</a>
+          <a class="btn btn-solid" href="#download">下载二进制</a>
+          <a class="btn btn-line" href="https://github.com/wnddd839/codebuddyapi-proxy#快速开始" target="_blank" rel="noopener">快速开始 · 源码</a>
         </div>
       </div>
     </section>
 
+    <!-- 能力与特性 -->
     <section id="why">
       <div class="wrap">
-        <p class="kicker">Only CodeBuddy</p>
-        <h2 class="title">一件事做到位</h2>
-        <p class="desc">不是多厂商聚合，也不是 Cursor 网关。这个项目只做一件事：CodeBuddy 账号 → OpenAI 兼容接口。</p>
+        <div class="section-head">
+          <div class="kicker">Capabilities</div>
+          <div>
+            <h2 class="title">一件事做到位</h2>
+            <p class="desc">不是多厂商聚合，也不是 Cursor 网关。这个项目只做一件事：CodeBuddy 账号 → OpenAI 兼容接口。</p>
+          </div>
+        </div>
 
-        <div class="rails">
-          <article class="rail">
-            <div>
-              <h3>协议直连</h3>
-              <p>默认 <code>protocol_direct</code>。OAuth 后直连上游，不必再挂 CLI serve，也不依赖任何浏览器插件。</p>
-            </div>
+        <div class="features-grid">
+          <article class="feature-item">
+            <h3>协议直连</h3>
+            <p>默认 <code>protocol_direct</code>。OAuth 认证后直连上游，不必再挂 CLI serve，也不依赖任何外部浏览器插件。</p>
           </article>
-          <article class="rail">
-            <div>
-              <h3>标准 OpenAI 形状</h3>
-              <p><code>GET /v1/models</code> · <code>POST /v1/chat/completions</code>，流式与非流式都支持。NewAPI、ZCode、Sub2API 按熟悉方式接入。</p>
-            </div>
+          <article class="feature-item">
+            <h3>标准 OpenAI 形状</h3>
+            <p><code>GET /v1/models</code> 与 <code>POST /v1/chat/completions</code>，流式与非流式完整支持。NewAPI、ZCode、Sub2API 按熟悉方式直连。</p>
           </article>
-          <article class="rail">
-            <div>
-              <h3>多账号轮询</h3>
-              <p>账号池按区域分组，失败自动换号。凭据以 <code>0600</code> 权限原子落盘，刷新失败不会清空账号列表。</p>
-            </div>
+          <article class="feature-item">
+            <h3>多账号轮询与熔断</h3>
+            <p>账号池按区域隔离，遇到 429 速率限制时自动退避隔离 60s 并换号重试。凭据以 <code>0600</code> 权限原子落盘。</p>
           </article>
-          <article class="rail">
-            <div>
-              <h3>真实 Credits</h3>
-              <p>管理台直读官网用量接口，展示「剩余 / 总额」。一眼知道账号还剩多少，不是假状态。</p>
-            </div>
+          <article class="feature-item">
+            <h3>真实 Credits 余额</h3>
+            <p>管理台直读官网用量接口，展示「剩余 / 总额」。一眼掌握账号余量，不是假状态。</p>
           </article>
-          <article class="rail">
-            <div>
-              <h3>国内 / 国际一键切换</h3>
-              <p>端点以<strong>账号自身区域</strong>为准，不看反代机器 IP。国内号不会误打到海外，反之亦然。</p>
-            </div>
+          <article class="feature-item">
+            <h3>国内 / 国际双区调度</h3>
+            <p>端点以<strong>账号自身区域</strong>为准，不看反代机器出口 IP。国内号不误打海外，反之亦然。</p>
           </article>
-          <article class="rail">
-            <div>
-              <h3>Token 用量透传</h3>
-              <p>流式收尾补发 usage chunk，含缓存命中统计，缓存字段兼容多上游别名——客户端能拿到真实消耗。</p>
-            </div>
+          <article class="feature-item">
+            <h3>Token 用量与思维链</h3>
+            <p>流式收尾补发 usage chunk 与缓存统计；原生支持 <code>reasoning_effort</code> 与思考链内容流式透传。</p>
           </article>
         </div>
       </div>
     </section>
 
+    <!-- 下载 Section -->
     <section id="download">
       <div class="wrap">
-        <p class="kicker">Download</p>
-        <h2 class="title">下载即用，无需安装</h2>
-        <p class="desc">
-          下载对应平台文件，直接运行即可。<strong>首次启动会自动生成 API Key</strong> 并写入同目录 <code>.env</code>——
-          你不需要手动配置任何东西。
-        </p>
+        <div class="section-head">
+          <div class="kicker">Distribution</div>
+          <div>
+            <h2 class="title">下载即用，无需安装</h2>
+            <p class="desc">下载对应平台文件直接运行。首次启动会自动生成 API Key 并写入同目录 <code>.env</code> 文件。</p>
+          </div>
+        </div>
+
         <table class="dl-table">
           <thead>
-            <tr><th>平台</th><th>文件</th></tr>
+            <tr><th>平台 / Platform</th><th>文件 / Executable</th></tr>
           </thead>
           <tbody>
             <tr>
               <td>Windows x64</td>
-              <td><a href="https://github.com/wnddd839/codebuddyapi-proxy/releases/latest/download/codebuddy-proxy-windows-amd64.exe">codebuddy-proxy-windows-amd64.exe</a></td>
+              <td><a href="https://github.com/wnddd839/codebuddyapi-proxy/releases/latest/download/codebuddy-proxy-windows-x64.exe">codebuddy-proxy-windows-x64.exe</a>（兼容旧名 <a href="https://github.com/wnddd839/codebuddyapi-proxy/releases/latest/download/codebuddy-proxy-windows-amd64.exe">windows-amd64.exe</a>）</td>
             </tr>
             <tr>
               <td>Linux x64</td>
@@ -447,40 +565,68 @@
             </tr>
           </tbody>
         </table>
-        <p class="desc" style="margin-top:1.5rem;margin-bottom:0;font-size:.9rem;">
-          可选配置模板：<a href="https://github.com/wnddd839/codebuddyapi-proxy/raw/main/go-codebuddy/releases/.env.example" style="color:var(--teal);text-decoration:underline;">.env.example</a>
-          · 校验 <a href="https://github.com/wnddd839/codebuddyapi-proxy/releases/latest/download/SHA256SUMS.txt" style="color:var(--teal);text-decoration:underline;">SHA256SUMS.txt</a>
+
+        <p class="dl-meta">
+          可选配置模板：<a href="https://github.com/wnddd839/codebuddyapi-proxy/raw/main/go-codebuddy/releases/.env.example">.env.example</a>
+          · 校验和 <a href="https://github.com/wnddd839/codebuddyapi-proxy/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a>
         </p>
       </div>
     </section>
 
+    <!-- 启动指南 -->
     <section id="start">
-      <div class="wrap split">
-        <div>
-          <p class="kicker">Get started</p>
-          <h2 class="title">三步跑起来</h2>
-          <p class="desc">下载、运行、OAuth 登录三步即可。默认国内站，管理台可一键切换国际站；也可从源码 <code>go run</code>。</p>
-          <div class="note">
-            <strong>范围说明：</strong>本项目只做 CodeBuddy 反代，不做 Cursor、也不做多厂商聚合。
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">Getting Started</div>
+          <div>
+            <h2 class="title">三步跑起来</h2>
+            <p class="desc">下载、运行、OAuth 登录三步即可。默认国内站，管理台可一键切换国际站。</p>
           </div>
         </div>
-        <pre class="panel" aria-label="启动命令"><code><span class="dim"># Windows 示例 —— 直接运行，首次启动自动生成 API Key</span>
-.\codebuddy-proxy-windows-amd64.exe
 
-<span class="dim"># 或从源码</span>
+        <div class="start-split">
+          <div class="step-list">
+            <div class="step-item">
+              <div class="step-idx">01 /</div>
+              <h4>运行二进制</h4>
+              <p>下载对应平台单文件，双击或在终端启动。首次启动将自动创建 <code>.env</code> 并生成安全网关 Key。</p>
+            </div>
+            <div class="step-item">
+              <div class="step-idx">02 /</div>
+              <h4>进入控制台完成 OAuth</h4>
+              <p>浏览器打开 <code>http://127.0.0.1:32126/direct-admin/</code>，点击「开始认证」完成登录，账号自动进入号池。</p>
+            </div>
+            <div class="step-item">
+              <div class="step-idx">03 /</div>
+              <h4>配置下游客户端</h4>
+              <p>在 Cursor、Claude Code、OpenCode 或 NewAPI 中配置 Base URL 与网关 API Key，立即发起请求。</p>
+            </div>
+          </div>
+
+          <pre class="code-panel" aria-label="启动命令"><code><span class="dim"># Windows 示例 —— 直接运行</span>
+.\codebuddy-proxy-windows-x64.exe
+
+<span class="dim"># 或从源码构建</span>
 cd go-codebuddy &amp;&amp; go run ./cmd/codebuddy-proxy
 
-<span class="dim"># endpoints</span>
+<span class="dim"># 默认服务端点</span>
 API    <span class="hot">http://127.0.0.1:32126/v1</span>
 Admin  <span class="hot">http://127.0.0.1:32126/direct-admin/</span></code></pre>
+        </div>
       </div>
     </section>
 
-    <section id="notice" class="notice-section">
+    <!-- 合规声明 -->
+    <section id="notice">
       <div class="wrap">
-        <p class="kicker">Notice</p>
-        <h2 class="title">使用前请读完这一节</h2>
-        <p class="desc">开源分享，不含担保。它是你自己的工具，责任边界也在你这边。</p>
+        <div class="section-head">
+          <div class="kicker">Compliance</div>
+          <div>
+            <h2 class="title">使用前请读完这一节</h2>
+            <p class="desc">开源分享，不含担保。它是你自己的工具，责任边界也在你这边。</p>
+          </div>
+        </div>
+
         <div class="notice-grid">
           <div class="notice-card">
             <h3>它是什么</h3>
@@ -495,164 +641,33 @@ Admin  <span class="hot">http://127.0.0.1:32126/direct-admin/</span></code></pre
             <p>不提供账号或额度，不提供托管服务，没有公共实例，不接收你的流量。软件按「原样」提供，不保证与上游持续兼容。</p>
           </div>
         </div>
-        <p class="notice-foot">
-          完整免责声明、安全使用建议与商标说明见
-          <a href="https://github.com/wnddd839/codebuddyapi-proxy#%E5%85%8D%E8%B4%A3%E5%A3%B0%E6%98%8E%E4%B8%8E%E5%90%88%E8%A7%84" target="_blank" rel="noopener">README · 免责声明与合规</a>。
-        </p>
       </div>
     </section>
 
-    <section class="cta">
+    <!-- 结语 CTA -->
+    <section class="cta-section">
       <div class="wrap">
-        <p class="kicker">Ship it</p>
-        <h2 class="title">把 CodeBuddy 接到你的工具链</h2>
-        <p class="desc">管理台完成 OAuth，客户端只认 Base URL 和 API Key。完整说明见仓库 README。</p>
-        <div class="cta-row">
-          <a class="btn btn-solid" href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">GitHub</a>
-          <a class="btn btn-line" href="https://github.com/wnddd839/codebuddyapi-proxy#readme" target="_blank" rel="noopener">README</a>
+        <h2>把 CodeBuddy 接到你的工具链.</h2>
+        <p>管理台完成 OAuth，客户端只认 Base URL 和 API Key。完整说明见仓库 README。</p>
+        <div class="hero-actions">
+          <a class="btn btn-solid" href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">GitHub 仓库</a>
+          <a class="btn btn-line" href="https://github.com/wnddd839/codebuddyapi-proxy#readme" target="_blank" rel="noopener">查阅 README</a>
         </div>
       </div>
     </section>
   </main>
 
   <footer>
-    <div class="wrap foot">
-      <p>CodeBuddy Proxy · Go · BSD-3-Clause · 仅限授权与合规使用<br />与 CodeBuddy 官方无关联、无隶属、无背书关系</p>
-      <p>
-        <a href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">仓库</a>
+    <div class="wrap footer-inner">
+      <div>CodeBuddy Proxy · BSD-3-Clause · 仅限授权与合规使用</div>
+      <div>与 CodeBuddy 官方无关联、无隶属、无背书关系</div>
+      <div>
+        <a href="https://github.com/wnddd839/codebuddyapi-proxy" target="_blank" rel="noopener">Repository</a>
         ·
-        <a href="https://github.com/wnddd839/codebuddyapi-proxy#readme" target="_blank" rel="noopener">README</a>
-      </p>
+        <a href="https://github.com/wnddd839/codebuddyapi-proxy#readme" target="_blank" rel="noopener">Documentation</a>
+      </div>
     </div>
   </footer>
-  <script>
-  (function(){
-    var canvas = document.getElementById('ambient');
-    if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var ctx = canvas.getContext('2d');
-    var w = 0, h = 0, dpr = 1, beams = [], routes = [];
-    function resize(){
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = window.innerWidth; h = window.innerHeight;
-      canvas.width = w * dpr; canvas.height = h * dpr;
-      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      var nBeams = Math.min(8, Math.max(4, Math.floor(w / 220)));
-      beams = [];
-      for (var i = 0; i < nBeams; i++) {
-        beams.push({
-          x: (i / nBeams) * w + Math.random() * 80,
-          angle: -0.35 + Math.random() * 0.15,
-          width: 40 + Math.random() * 90,
-          speed: 0.08 + Math.random() * 0.12,
-          phase: Math.random() * Math.PI * 2,
-          hue: i % 3 === 0 ? 'teal' : 'accent'
-        });
-      }
-      var nRoute = Math.min(100, Math.floor(w * h / (window.innerWidth < 840 ? 18000 : 12000)));
-      routes = [];
-      for (var j = 0; j < nRoute; j++) {
-        routes.push({
-          side: Math.random() < 0.5 ? 'left' : 'right',
-          t: Math.random(),
-          speed: 0.002 + Math.random() * 0.004,
-          size: 1 + Math.random() * 1.5,
-          alpha: 0.12 + Math.random() * 0.28
-        });
-      }
-    }
-    function drawGrid(t){
-      var spacing = 72, off = (t * 0.012) % spacing;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(242,239,230,0.035)';
-      ctx.lineWidth = 1;
-      for (var x = -spacing; x < w + spacing; x += spacing) {
-        ctx.beginPath(); ctx.moveTo(x + off, 0); ctx.lineTo(x + off, h); ctx.stroke();
-      }
-      for (var y = -spacing; y < h + spacing; y += spacing) {
-        ctx.beginPath(); ctx.moveTo(0, y + off * 0.6); ctx.lineTo(w, y + off * 0.6); ctx.stroke();
-      }
-      ctx.restore();
-    }
-    function drawBeams(t){
-      ctx.save();
-      ctx.globalCompositeOperation = 'screen';
-      for (var i = 0; i < beams.length; i++) {
-        var b = beams[i];
-        var pulse = 0.55 + 0.45 * Math.sin(t * b.speed + b.phase);
-        var len = h * 1.2;
-        var cx = b.x + Math.sin(t * 0.05 + b.phase) * 30;
-        var color = b.hue === 'teal' ? 'rgba(94,196,168,' + (0.04 * pulse) + ')' : 'rgba(232,138,74,' + (0.05 * pulse) + ')';
-        ctx.save();
-        ctx.translate(cx, -40);
-        ctx.rotate(b.angle);
-        var grd = ctx.createLinearGradient(0, 0, 0, len);
-        grd.addColorStop(0, 'rgba(0,0,0,0)');
-        grd.addColorStop(0.35, color);
-        grd.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = grd;
-        ctx.fillRect(-b.width / 2, 0, b.width, len);
-        ctx.restore();
-      }
-      ctx.restore();
-    }
-    function drawRoutes(){
-      var hubX = w * 0.58, hubY = h * 0.38;
-      for (var i = 0; i < routes.length; i++) {
-        var p = routes[i];
-        p.t += p.speed;
-        if (p.t > 1) { p.t = 0; p.side = Math.random() < 0.5 ? 'left' : 'right'; }
-        var startX = p.side === 'left' ? w * 0.08 : w * 0.92;
-        var startY = p.side === 'left' ? h * 0.28 : h * 0.72;
-        var midX = hubX + (p.side === 'left' ? -40 : 40);
-        var tt = p.t;
-        var x = (1-tt)*(1-tt)*startX + 2*(1-tt)*tt*midX + tt*tt*hubX;
-        var y = (1-tt)*(1-tt)*startY + 2*(1-tt)*tt*hubY + tt*tt*hubY;
-        var outPhase = Math.max(0, (tt - 0.72) / 0.28);
-        var px = x, py = y, col = '232,138,74';
-        if (outPhase > 0) { px = hubX + outPhase * (w * 0.2); py = hubY; col = '94,196,168'; }
-        ctx.fillStyle = 'rgba(' + col + ',' + (p.alpha * (outPhase > 0 ? 1.15 : 1)) + ')';
-        ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill();
-      }
-      var g = ctx.createRadialGradient(hubX, hubY, 0, hubX, hubY, 90);
-      g.addColorStop(0, 'rgba(94,196,168,0.10)');
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(hubX - 90, hubY - 90, 180, 180);
-    }
-    function vignette(){
-      var g = ctx.createRadialGradient(w/2, h/2, w*0.2, w/2, h/2, w*0.75);
-      g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, 'rgba(14,17,16,0.55)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
-    }
-    var start = performance.now();
-    function frame(now){
-      var t = (now - start) / 1000;
-      ctx.fillStyle = '#0e1110';
-      ctx.fillRect(0, 0, w, h);
-      drawGrid(t);
-      drawBeams(t);
-      drawRoutes();
-      vignette();
-      requestAnimationFrame(frame);
-    }
-    window.addEventListener('resize', resize);
-    resize();
-    requestAnimationFrame(frame);
-  })();
-  </script>
-  <script>
-    (function () {
-      var nav = document.getElementById('nav');
-      if (!nav) return;
-      var onScroll = function () {
-        nav.classList.toggle('is-stuck', window.scrollY > 8);
-      };
-      window.addEventListener('scroll', onScroll, { passive: true });
-      onScroll();
-    })();
-  </script>
+
 </body>
 </html>

@@ -37,3 +37,4 @@ go-codebuddy/releases/*.exe
 go-codebuddy/*.exe
 go-codebuddy/*.test
 go-codebuddy/*.out
+cursor-proxy/
