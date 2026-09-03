@@ -14,6 +14,7 @@ Go CodeBuddy Proxy 文档目录。
 | [operations/runbook.md](operations/runbook.md) | 运行、排障、持久化、资源占用 |
 | [standards/coding-standards.md](standards/coding-standards.md) | 本仓库编码规范 |
 | [standards/modern-go-guidelines.md](standards/modern-go-guidelines.md) | JetBrains 现代 Go 指南摘录（Go ≤ 1.26） |
+| [../design/README.md](../design/README.md) | 前端 Editorial 设计规格总纲（管理台 / 产品页 / Logo） |
 
 ## 仓库级
 

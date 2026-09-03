@@ -1,10 +1,10 @@
 # 03 · DOM 契约与回归清单（全程对照 · 改完必跑）
 
-**这份是安全网。** 改 CSS 和 HTML 结构时，任何对 id/class 的重命名
-都必须同步改 JS 与 Go —— 否则**功能静默失效**（不报错，就是点了没反应）。
+**这份是安全网，不决定审美。** 审美以 `README.md` 的 Editorial token 为准。
+改 CSS 和 HTML 结构时，任何对 id/class 的重命名都必须同步改 JS 与 Go —— 否则**功能静默失效**。
 
-> **强烈建议本次改版只动 CSS 与 HTML 结构，id 一律保持原样。**
-> 重命名 id 的收益远小于出错风险。
+> **本次改版只动 CSS 与 HTML 结构，id 一律保持原样。**
+> `.dot.bad` / `.badge.on` / `.teal` / `.danger` 等 **class 名保留**，视觉改为单色（见 01）。
 
 ---
 
@@ -13,8 +13,10 @@
 | # | 约束 | 违反后果 |
 |---|---|---|
 | H1 | Go 反引号字符串内**禁止出现反引号 \`** | **编译直接失败** |
+| H2 | 禁止 Web Font CDN | 国内首屏卡死 / 违反 Editorial |
 | H3 | id/class 是 JS↔HTML↔Go 三方契约 | 功能静默失效 |
 | H4 | `escapeHtml()` 必须保留并覆盖全部动态内容 | **XSS 漏洞** |
+| H7 | Editorial 单色禁令（见 README） | 审查驳回 |
 
 ### H1 详解（最容易踩）
 
@@ -243,10 +245,11 @@ const html = '<div>' + escapeHtml(name) + '</div>';
 - [ ] 落地页（OAuth 回调）正常显示，返回链接可达
 
 ### 视觉
-- [ ] 断网（无 Inter）时版式不塌
+- [ ] 断网（系统衬线/无衬线）时版式不塌
 - [ ] 1366×768 下首屏四项指标完整可见
-- [ ] 截图去色后层级清晰
-- [ ] 产品页 → 管理台 → 落地页 观感连续
+- [ ] 截图仍是奶油底+软黑字，无第三色
+- [ ] 产品页 → 管理台 → 落地页 同一 Editorial token
+- [ ] 无 `rounded` / `box-shadow` / 彩色 accent / Google Fonts
 
 ---
 
@@ -266,5 +269,5 @@ const html = '<div>' + escapeHtml(name) + '</div>';
    → 检查 addEventListener 的事件委托是否还在（账号行 / chips）。
 
 5. 编译过、功能对，但就是看着不对
-   → 回到 01 §2 禁用清单，跑 §6 的 grep 命令卡数字。
+   → 回到 design/README.md 禁令 + 01 §2，grep 旧色值与 feTurbulence。
 ```

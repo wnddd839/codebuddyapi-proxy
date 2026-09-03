@@ -6,6 +6,19 @@
 
 ---
 
+## v0.3.8 · 2026-09-03 · Editorial 视觉改版
+
+### 视觉与排版
+
+- **Editorial 杂志设计系统落地**：管理台（`direct-admin`）、OAuth 回调落地页（`LaunchPage`）与 GitHub Pages 产品页全面采用暖奶油 `#F9F8F6` + 软黑 `#1C1C1C` + 单色透明度层级，移除全部过时彩色光晕、噪点层、Canvas 氛围层与 Web Font CDN 依赖。
+- **Logo 单色化**：`docs/logo.svg` 重写为印刷风格纯单色线标（折线汇入、水平出线），与全站 Editorial 视觉语言一致。
+- **设计规格**：`design/` 目录改为 Editorial 唯一源；旧深色仪器风 / 粒子环境层规格作废。
+- **DOM 契约保持**：管理台 id / JS 行为 / 后端 API / 账号池协议零回归；仅展示层变更。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.8
+
+---
+
 ## v0.3.7 · 2026-08-31 · 号池冷却与规范落地
 
 ### 号池冷却

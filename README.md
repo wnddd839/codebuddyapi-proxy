@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="https://wnddd839.github.io/codebuddyapi-proxy/"><img src="https://img.shields.io/badge/Product-Page-e86f3a?style=flat-square" alt="Product Page" /></a>
-  <a href="https://github.com/wnddd839/codebuddyapi-proxy/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-BSD--3--Clause-5ec4a8?style=flat-square" alt="License" /></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-%E2%89%A51.26-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" /></a>
-  <img src="https://img.shields.io/badge/Transport-protocol__direct-0e1110?style=flat-square" alt="protocol_direct" />
+  <a href="https://wnddd839.github.io/codebuddyapi-proxy/"><img src="https://img.shields.io/badge/Product-Page-1C1C1C?style=flat-square" alt="Product Page" /></a>
+  <a href="https://github.com/wnddd839/codebuddyapi-proxy/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-BSD--3--Clause-1C1C1C?style=flat-square" alt="License" /></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-%E2%89%A51.26-1C1C1C?style=flat-square&logo=go&logoColor=white" alt="Go" /></a>
+  <img src="https://img.shields.io/badge/Transport-protocol__direct-1C1C1C?style=flat-square" alt="protocol_direct" />
 </p>
 
 <p align="center">

@@ -1,170 +1,122 @@
-# 02 · 产品页 + 落地页设计规格（第二步执行）
+# 02 · 产品页 Editorial 规格
 
-**依赖**：先完成 `01-admin-console.md`，消费其 §3.1 颜色 token 与 §3.2 字体栈。
-
-| 目标文件 | 行数 | 性质 |
-|---|---|---|
-| `docs/index.html` | 447 | 骨架健康，**只做减法** |
-| `go-codebuddy/internal/admin/page.go:801-844`（LaunchPage） | 44 | 跟随统一 |
+**目标文件**：`go-codebuddy/docs/index.html`  
+**依赖**：`README.md` token 与 `01` 同源。  
+**性质**：视觉按杂志封面**重写**；技术事实与下载表必须正确。
 
 ---
 
-## §0 产品页现状判定：其实不差，别重做
+## §0 不要做的
 
-我做过关键词扫描，AI 文案黑话（赋能/一站式/极致/无缝/全新/驱动/生态/打造/引领）
-命中 **0 次**。现有文案是具体的、写给工程师的：
-
-> "默认 protocol_direct。OAuth 后直连上游，模型列表走 /v3/config，不必再挂 CLI serve。"
-
-这种诚实度很难得。**结构、配色策略、文案风格一律保留**，只做减法。
-
-### 但也别被自己的判断骗了
-
-产品页同样犯了两个错误，且与项目决策**自相矛盾**：
-
-1. **还挂着 Google Fonts**（Fraunces + Sora）
-   —— 你在管理台（`a5bb211`）已经移除过一次，产品页没跟上。
-   本项目主要用户在国内，GitHub Pages 上加载 Fraunces/Sora 大概率失败或超时，
-   直接退化成 Georgia/system-ui，还可能卡首屏。
-2. **Fraunces + Sora 是当前 AI 生成产品页的头号固定搭配**
-   （衬线展示体 + 几何无衬线）。一看到就有既视感。
+- 不要沿用深色 `#0e1110` + 珊瑚/薄荷  
+- 不要沿用 Canvas 光柱 / 粒子 / glyph rain（旧 04 作废）  
+- 不要 Google Fonts / Fraunces / Sora / Inter  
+- 不要 STYLEKIT 模板里的 `bg-[#e63946]` 红 hero  
+- 不要把「赋能 / 一站式 / 极致 / 无缝 / 全新 / 打造」写进文案  
+- 不要改下载文件名、仓库 URL、端口、路径等事实
 
 ---
 
-## §1 必改（3 项）
+## §1 页面结构（杂志骨架）
 
-### 1.1 移除 Google Fonts（H2）
+保留信息分区，换成 Editorial 版式：
 
-删除全部 `fonts.googleapis.com` 与 `fonts.gstatic.com` 的 preconnect 与 stylesheet 引用。
-
-替换为不依赖网络的字体栈：
-
-```css
---display: "Iowan Old Style", "Palatino Linotype", Palatino,
-           "Songti SC", Georgia, serif;     /* 有人文感的衬线，非 Fraunces */
---sans:    "Inter", system-ui, -apple-system, "PingFang SC",
-           "Microsoft YaHei", sans-serif;   /* 非 Sora */
+```
+nav          固定顶栏，cream/90 + 8px blur，衬线字标 CODEBUDDY
+hero         超大衬线标题 + italic 副题 + 两个 CTA（反相主按钮 + 下划线次按钮）
+why          12 栏网格：左 label / 右正文。不要 01/02/03 彩虹编号卡
+download     系统 × 文件名 细线表，border-b /10
+start        三步，uppercase label + 衬线序号 01 02 03（单色即可）
+cta          大衬线句 + GitHub / Releases 链接
+footer       反相底 #1C1C1C 字 #F9F8F6，xs uppercase · 分隔
 ```
 
-**关键**：降级后**必须重新检查行高与字距**。
-Fraunces 的 x-height 和字重分布与 Iowan/Palatino 完全不同，
-只换 font-family 不改排版，标题会散。
+产品页 **可以使用** 大留白：`padding: 96px 0` / `md: 160px 0`。  
+容器：`max-width: 1280px; padding: 0 24px` / `md: 0 48px`。  
+正文栏：`max-width: 28–36rem`，不要通栏灌字。
 
-> 与 01 的 §3.2 保持完全一致（同一份 `--sans` 定义）。
+### Hero 标题建议
 
-### 1.2 删除 `.noise` 噪点层
+不要再写一句空的口号。沿用现有诚实句，放大排版：
 
-`docs/index.html` 里的 `.noise` 用了完整 `feTurbulence`（与控制台 `body::before` 同源）。
-这是 AI 生成页面的头号签名，且在这里纯装饰。
-
-若确实需要质感，改用 **1px 网格线背景**（极低对比度）—— 真实技术文档站的做法。
-
-### 1.3 收敛 hero 尺寸
-
-```css
-/* 现在 */
-font-size: clamp(3.2rem, 10vw, 6.4rem);
-
-/* 改为 */
-font-size: clamp(2.6rem, 6.5vw, 4.2rem);
+```
+把 CodeBuddy
+变成 /v1.
 ```
 
-**理由**：现有尺寸导致首屏只剩标题。改后 hero-lead 与 CTA 在
-**1366×768 笔记本上不滚动即可完整可见** —— 这是真实用户最常见的屏幕。
+副题 italic `/60`：协议直连、OAuth、账号池、OpenAI 兼容。  
+主 CTA：Releases。次 CTA：GitHub。
+
+1366×768：**标题 + 副题 + 两个 CTA 不滚动可见**。超大 `9rem` 若把 CTA 挤出首屏，降到 `clamp(3rem, 8vw, 6.5rem)`，**功能优先于模板字号**。
 
 ---
 
-## §2 建议改（2 项）
+## §2 必改
 
-- **`01/02/03` 编号栏**：改用图标，或去掉编号。编号栏是 AI 版式默认组件。
-- **`.kicker`（"Only CodeBuddy"）**：保留，但降低字重 —— 它目前抢了 `h2`。
-
----
-
-## §3 明确保留（不要动 —— 这些是对的）
-
-- 深色底 + 双强调色（橙 `#e88a4a` + 青`#5ec4a8`）的配色策略
-- 具体的技术文案风格（零营销黑话）
-- 简洁页脚（项目 · 语言 · 许可 · 合规声明）
-- 整体分区结构：hero / why / download / start / cta
+1. **Token 全面替换为 cream / ink**  
+2. **删除** `#ambient` Canvas 及其 JS；`prefers-reduced-motion` 不再需要藏 Canvas，只关 underline/italic  
+3. **删除** Google Fonts、`.noise`、`feTurbulence`、多层彩色 radial  
+4. **Logo**：`<img src="./logo.svg">` 指向重写后的单色 SVG（见 04）  
+5. **og:image** 仍指向 Pages 上的 `logo.svg`  
+6. 链接 hover-underline（`scaleX` 从右到左）  
+7. 标题 `group-hover:italic` 仅用于列表项，hero 主标题保持静止  
+8. 细分割线 `/10`，hover `/40`
 
 ---
 
-## §3.1 可选增强：环境层（Ambient）
+## §3 明确保留（事实层）
 
-若希望产品页更有「活」的背景、又**不**动 Go 二进制，见 **`04-product-ambient.md`**。
-
-摘要：
-
-- **只做** `docs/index.html`；管理台 / LaunchPage **不加** Canvas
-- 参考 sysc-Go 的 beams / 稀疏 glyph / 信号路由，**原生 Canvas 手写**，不搬库
-- 默认克制：grid + beams + route；glyph rain 默认关或极稀
-- 试验对照：已随之删除；氛围层已合入 `docs/index.html`，对照稿可从 Git 历史取回
-
-**未合入前，现网产品页仍以 §0「减法已完成」为准，本段不 blocker。**
+- 仓库：`wnddd839/codebuddyapi-proxy`  
+- Pages：`https://wnddd839.github.io/codebuddyapi-proxy/`  
+- 端口 `32126`，路径 `/v1` `/direct-admin/` `/health`  
+- 下载名：`codebuddy-proxy-windows-x64.exe` 等  
+- 文案风格：具体、给工程师，零营销黑话  
+- 协议直连 / OAuth / 号池 / Credits / 国内国际 这些事实句
 
 ---
 
-## §4 与产品页统一（两页必须同源）
-
-用户从产品页点进管理台时，不应感觉换了网站。强制执行：
+## §4 跨页一致性
 
 | Token | 产品页 | 管理台 | 落地页 |
 |---|---|---|---|
-| `--bg` | `#0e1110` | `#0e1110` | `#0e1110` |
-| `--accent` | `#e88a4a` | `#e88a4a` | `#e88a4a` |
-| `--teal` | `#5ec4a8` | `#5ec4a8` | `#5ec4a8` |
-| `--sans` | 01 §3.2 | 01 §3.2 | 01 §3.2 |
+| `--bg` | `#F9F8F6` | `#F9F8F6` | `#F9F8F6` |
+| `--fg` | `#1C1C1C` | `#1C1C1C` | `#1C1C1C` |
+| 标题字体 | 系统衬线 | 系统衬线 | 系统衬线 |
+| 圆角 / 阴影 | 无 | 无 | 无 |
 
-**产品页深色，管理台也深色。** 这是本轮改版最容易漏的一致性检查。
-
----
-
-## §5 LaunchPage 落地页（`page.go:801-844`）
-
-这是 OAuth 登录后的中间页，44 行，同样需要：
-
-1. 移除 Google Fonts 引用（`Outfit`）
-2. 应用 01 §3.1 的深色 token
-3. 字体栈对齐 01 §3.2
-4. 结构极简：居中卡片 + 状态文案 + （可选）一个返回管理台的链接
-5. **保留 `html.EscapeString(title)` 与 `html.EscapeString(message)`** —— H4 安全边界
-
-**不要**给它加噪点、渐变光晕或装饰图形。它只出现 2 秒，唯一任务是告诉用户"成功/失败了，接下来做什么"。
+用户从 Pages 点进本地管理台，应觉得是同一份印刷品，只是 denser。
 
 ---
 
-## §6 验收清单
+## §5 文档同步（产品页改完必须做）
+
+只改描述，不改协议：
+
+| 文件 | 动作 |
+|---|---|
+| `README.md` | 徽章/措辞与产品页一致；logo 仍 `docs/logo.svg` |
+| `docs/README.md` | 如需，加设计规格入口 `../design/README.md` |
+| `docs/guides/getting-started.md` | Windows 推荐文件名与 README 一致（若仍写 `windows-amd64`） |
+| `CHANGELOG.md` | Unreleased：管理台/产品页/Logo 改为 Editorial 单色杂志风 |
+
+禁止借文档改 env 默认值或路由。
+
+---
+
+## §6 验收
 
 ```bash
-# 零外部字体（三个文件）
-grep -rn "fonts.googleapis\|fonts.gstatic" docs/index.html \
-     go-codebuddy/internal/admin/page.go                      # 必须空
-
-# 零噪点
-grep -rn "feTurbulence" docs/index.html \
-     go-codebuddy/internal/admin/page.go                      # 必须空
-
-# Go 侧未破坏
-cd go-codebuddy && go build ./... && go vet ./... && go test ./...
+grep -nE "fonts.googleapis|feTurbulence|<script src=" docs/index.html   # 空
+grep -nE "#e88a4a|#5ec4a8|#e63946|#0e1110" docs/index.html              # 空
+grep -n "id=\"ambient\"" docs/index.html                                 # 空
+cd go-codebuddy && go build ./... && go test ./...                       # 仍绿
 ```
 
-**人工验收**：
+人工：
 
-1. **断网降级**：禁用全部网络打开产品页，标题/正文排版不塌、不重叠
-2. **首屏完整**：1366×768 下 hero 标题 + lead + 两个 CTA 全部可见，无需滚动
-3. **跨页一致性**：产品页 → 管理台 → 落地页，背景色与字体观感连续（不像是三个网站）
-4. **去色测试**：产品页截图去色后层级依然清晰
-5. **对比检查**：与改版前并排看，确认"更像一个可信的开源项目"，而不是"更像一个模板"
-
----
-
-## §7 常见失败模式
-
-| 失败模式 | 表现 | 规避 |
-|---|---|---|
-| 自相矛盾 | 管理台无 Web Font，产品页还挂着 | §6 首条命令卡死 |
-| 只换字体不调版式 | 标题散架、行高错乱 | §1.1 降级后重调，必做 |
-| 误伤好文案 | 减法做过头，把技术细节也删了 | §3 明确保留清单 |
-| 三页各做各的 | 三个页面三套色 | §4 表格逐行对 |
-| LaunchPage 过度设计 | 给 2 秒的中间页加装饰 | §5 第 5 条 |
+1. 断网打开产品页，衬线降级不塌  
+2. 1366×768 首屏 CTA 可见  
+3. 与管理台并排，奶油/软黑一致  
+4. 移动端无横向溢出  
+5. 所有链接有可见 focus  
+6. 一眼能看成 Editorial，而不是 Dashboard 模板  
