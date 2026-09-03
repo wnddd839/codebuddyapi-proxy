@@ -44,8 +44,5 @@ jobs:
           git add -A
           git commit -m "deploy: sync landing from ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
-
-      - name: Request Pages rebuild
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds"
+          # Pushing to gh-pages already triggers the legacy Pages publisher.
+          # Do not also POST /pages/builds — that races and leaves status=errored.
