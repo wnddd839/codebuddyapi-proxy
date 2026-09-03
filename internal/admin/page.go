@@ -38,10 +38,12 @@ body{
 }
 a{color:inherit;text-decoration:none}
 .shell{max-width:1200px;margin:0 auto;padding:0 24px 64px}
+
+/* 顶栏 */
 .topbar{
   position:sticky;top:0;z-index:50;
   display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
-  min-height:58px;padding:0 0 16px;margin-bottom:32px;
+  min-height:58px;padding:0 0 16px;margin-bottom:24px;
   background:rgba(249,248,246,.90);backdrop-filter:blur(8px);
   border-bottom:1px solid var(--fg-10);
 }
@@ -66,13 +68,51 @@ a{color:inherit;text-decoration:none}
   width:6px;height:6px;background:var(--fg);border:1px solid var(--fg);
 }
 .pill .dot.bad{background:transparent;border:1px solid var(--fg-40)}
-.hero{
-  display:grid;grid-template-columns:1.2fr .8fr;gap:24px;margin-bottom:24px;
+
+/* 核心切页导航条 (Editorial Chapter Navigation) */
+.tabs-nav{
+  display:flex;
+  border-top:1px solid var(--fg-10);
+  border-bottom:1px solid var(--fg-10);
+  margin-bottom:32px;
+  overflow-x:auto;
 }
-@media (max-width:1024px){.hero{grid-template-columns:1fr}}
+.tab-link{
+  flex:1;min-width:140px;
+  padding:14px 18px;background:transparent;border:none;
+  border-right:1px solid var(--fg-10);
+  font-family:var(--sans);font-size:13px;letter-spacing:.05em;
+  color:var(--fg-60);cursor:pointer;text-align:left;
+  transition:color 200ms ease,background-color 200ms ease;
+  display:flex;align-items:baseline;gap:8px;
+}
+.tab-link:last-child{border-right:none}
+.tab-link:hover{color:var(--fg);background:rgba(28,28,28,.02)}
+.tab-link.active{
+  color:var(--fg);font-weight:500;
+  box-shadow:inset 0 -2px 0 var(--fg);
+  background:rgba(28,28,28,.03);
+}
+.tab-idx{
+  font-family:var(--display);font-style:italic;font-size:15px;color:var(--fg-40);
+}
+.tab-link.active .tab-idx{color:var(--fg)}
+
+/* 切页容器 */
+.tab-panel{display:none}
+.tab-panel.active{
+  display:block;
+  animation:panelFade 250ms ease-out;
+}
+@keyframes panelFade{
+  from{opacity:0;transform:translateY(4px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* 卡片与面板 */
 .panel{
   border:1px solid var(--fg-10);background:transparent;
-  padding:24px;transition:border-color 200ms ease;
+  padding:24px;margin-bottom:24px;transition:border-color 200ms ease;
 }
 .panel:hover{border-color:var(--fg-40)}
 .panel-inner{height:100%}
@@ -86,17 +126,17 @@ h1{
 }
 .lede{margin:0;color:var(--fg-60);font-size:13.5px;line-height:1.6;max-width:52ch}
 .metrics{
-  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:20px;
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:24px;
 }
 @media (max-width:980px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:720px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.metric{padding:14px;border:1px solid var(--fg-10);background:transparent}
+.metric{padding:16px;border:1px solid var(--fg-10);background:transparent}
 .metric .k{font-size:11px;font-family:var(--sans);letter-spacing:.15em;text-transform:uppercase;color:var(--fg-40)}
 .metric .v{
-  margin-top:8px;font-family:var(--mono);font-size:22px;font-weight:400;
+  margin-top:8px;font-family:var(--mono);font-size:24px;font-weight:400;
   letter-spacing:-.02em;color:var(--fg);text-align:right;
 }
-.metric .v.sm{font-size:13px;line-height:1.4}
+.metric .v.sm{font-size:13.5px;line-height:1.4}
 .section-head{
   display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;
   margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid var(--fg-10);
@@ -113,7 +153,7 @@ button,.btn,.linkbtn{
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
   padding:8px 16px;font-family:var(--sans);font-size:12px;
   letter-spacing:.06em;text-transform:uppercase;
-  transition:color 200ms ease, border-color 200ms ease, background-color 200ms ease;
+  transition:color 200ms ease,border-color 200ms ease,background-color 200ms ease;
 }
 button:hover,.btn:hover,.linkbtn:hover{
   color:var(--fg);border-color:var(--fg);background:rgba(28,28,28,.03);
@@ -150,10 +190,10 @@ select:focus,input:focus{border-bottom-color:var(--fg)}
   font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--fg-40);margin-bottom:6px;
 }
 .oauth-status .msg{font-size:13px;line-height:1.5;color:var(--fg-80)}
-.stack{display:grid;gap:24px;margin-top:24px}
+
 .account{
   display:grid;gap:10px;padding:18px;border:1px solid var(--fg-10);
-  background:transparent;transition:border-color 200ms ease;
+  background:transparent;transition:border-color 200ms ease;margin-bottom:12px;
 }
 .account:hover{border-color:var(--fg-40)}
 .account-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
@@ -184,7 +224,7 @@ select:focus,input:focus{border-bottom-color:var(--fg)}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{
   padding:6px 12px;border:1px solid var(--fg-10);font-size:12px;font-family:var(--mono);
-  color:var(--fg);background:transparent;transition:border-color 200ms ease, font-style 500ms ease;
+  color:var(--fg);background:transparent;transition:border-color 200ms ease,font-style 500ms ease;
 }
 .chip.btnish{cursor:pointer}
 .chip.btnish:hover{border-color:var(--fg-40);font-style:italic}
@@ -222,6 +262,22 @@ pre{
 .usage-line .pill.bad{border-color:var(--fg-20);color:var(--fg-40)}
 .account .actions button{padding:4px 10px;font-size:11px;color:var(--fg-60);border-color:var(--fg-10)}
 .account .actions button:hover{color:var(--fg);border-color:var(--fg-40)}
+
+/* 概览下方双栏注释卡片 */
+.overview-notes{
+  display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px;
+}
+@media (max-width:800px){.overview-notes{grid-template-columns:1fr}}
+.note-item{
+  border-top:1px solid var(--fg-10);padding-top:14px;
+}
+.note-item h3{
+  font-family:var(--display);font-size:16px;font-weight:400;margin-bottom:6px;
+}
+.note-item p{
+  font-size:12.5px;color:var(--fg-60);line-height:1.6;margin:0;
+}
+
 #statusBox,#oauthBox,#modelsBox{display:none}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none !important;transition:none !important}
@@ -243,10 +299,29 @@ pre{
     </div>
   </header>
 
-  <div class="hero">
+  <!-- 章节目录切页导航 (Chapter Tabs) -->
+  <nav class="tabs-nav" role="tablist">
+    <button type="button" class="tab-link active" data-tab="tab-overview">
+      <span class="tab-idx">01 /</span> 概览与监控
+    </button>
+    <button type="button" class="tab-link" data-tab="tab-pool">
+      <span class="tab-idx">02 /</span> 账号池与授权
+    </button>
+    <button type="button" class="tab-link" data-tab="tab-client">
+      <span class="tab-idx">03 /</span> 客户端接入
+    </button>
+    <button type="button" class="tab-link" data-tab="tab-models">
+      <span class="tab-idx">04 /</span> 模型与快照
+    </button>
+  </nav>
+
+  <!-- ========================================================
+       TAB 01: 概览与监控 (专注运行态与统计，不堆叠表单)
+       ======================================================== -->
+  <div class="tab-panel active" id="tab-overview">
     <section class="panel">
       <div class="panel-inner">
-        <div class="eyebrow">Gateway Console</div>
+        <div class="eyebrow">Gateway Console · Overview</div>
         <h1>账号、模型与网关状态</h1>
         <p class="lede">监控 OAuth 登录、账号池状态与请求健康度。</p>
         <div class="metrics">
@@ -256,10 +331,45 @@ pre{
           <div class="metric"><div class="k">成功 / 失败</div><div class="v sm" id="mSF">0 / 0</div></div>
           <div class="metric"><div class="k">总 Tokens</div><div class="v sm" id="mTokens">0</div></div>
         </div>
-        <div class="actions" style="margin-top:20px">
-          <button class="ghost" id="btnRefresh" type="button">刷新状态</button>
+        <div class="actions" style="margin-top:24px">
+          <button class="primary" id="btnRefresh" type="button">刷新状态</button>
           <button class="ghost" id="btnModels" type="button">拉取模型</button>
         </div>
+      </div>
+    </section>
+
+    <div class="overview-notes">
+      <div class="note-item">
+        <h3>429 限频隔离与自动熔断</h3>
+        <p>上游 429 时将该账号冷却 2 分钟（111xx 为 5 分钟，部分 5xx 为 30 秒），冷却期内不参与轮询；同区全冷却时选最早恢复者继续服务，避免整体不可用。</p>
+      </div>
+      <div class="note-item">
+        <h3>Reasoning 思考链透传</h3>
+        <p>支持客户端 <code>reasoning_effort</code> / <code>reasoning</code> 入站映射；流式与非流式可回传 <code>reasoning_content</code>（视上游模型是否开启思考）。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       TAB 02: 账号池与授权 (专注号池调度与 OAuth)
+       ======================================================== -->
+  <div class="tab-panel" id="tab-pool">
+    <section class="panel">
+      <div class="panel-inner">
+        <div class="section-head">
+          <div>
+            <h2>账号池集群</h2>
+            <p>一键切换国内 / 国际号池；请求只会使用当前区域账号。</p>
+          </div>
+          <div class="actions">
+            <div class="seg" id="poolSiteSeg" role="group" aria-label="号池区域">
+              <button type="button" data-site="domestic" id="btnPoolDomestic">国内</button>
+              <button type="button" data-site="global" id="btnPoolGlobal">国际</button>
+            </div>
+          </div>
+        </div>
+        <p class="seg-hint" id="poolSiteHint">当前号池：—</p>
+        <div id="accounts"></div>
       </div>
     </section>
 
@@ -267,8 +377,8 @@ pre{
       <div class="panel-inner">
         <div class="section-head">
           <div>
-            <h2>OAuth 登录</h2>
-            <p>选择站点并开始认证，完成后账号自动进入池中。</p>
+            <h2>OAuth 快速授权</h2>
+            <p>选择站点并开始认证，完成后账号自动归入池中。</p>
           </div>
         </div>
         <div class="field-grid">
@@ -301,77 +411,66 @@ pre{
     </section>
   </div>
 
-  <section class="panel" id="client-config">
-    <div class="panel-inner">
-      <div class="section-head">
-        <div>
-          <h2>OpenAI 兼容接入</h2>
-          <p>给下游客户端填 Base URL + API Key；不会暴露 CodeBuddy OAuth token。</p>
-        </div>
-        <div class="actions">
-          <button class="ghost" id="btnRefreshClient" type="button">刷新接入信息</button>
-          <button class="teal" id="btnGenerateKey" type="button">生成 API Key</button>
-        </div>
-      </div>
-      <div class="field-grid" style="grid-template-columns:1fr 1fr">
-        <div>
-          <label for="openAiBaseUrl">Base URL</label>
-          <div class="copyline">
-            <input id="openAiBaseUrl" readonly placeholder="加载中…"/>
-            <button class="ghost" id="copyBaseUrl" type="button">复制</button>
-          </div>
-        </div>
-        <div>
-          <label for="openAiChatUrl">Chat Completions</label>
-          <div class="copyline">
-            <input id="openAiChatUrl" readonly placeholder="加载中…"/>
-            <button class="ghost" id="copyChatUrl" type="button">复制</button>
-          </div>
-        </div>
-        <div>
-          <label for="openAiApiKey">API Key（网关层）</label>
-          <div class="copyline">
-            <input id="openAiApiKey" class="secret-input" type="password" readonly placeholder="未配置"/>
-            <button class="ghost" id="copyApiKey" type="button">复制</button>
-          </div>
-        </div>
-        <div>
-          <label for="openAiModel">推荐模型</label>
-          <div class="copyline">
-            <input id="openAiModel" readonly value="auto"/>
-            <button class="ghost" id="copyModel" type="button">复制</button>
-          </div>
-        </div>
-      </div>
-      <div class="secret-hint" id="clientConfigHint">API Key 点击复制时才会读取明文。生成的新 Key 仅当前进程生效，重启需写入 CODEBUDDY_PROXY_API_KEY。</div>
-    </div>
-  </section>
-
-  <div class="stack">
-    <section class="panel">
+  <!-- ========================================================
+       TAB 03: 客户端接入配置 (专注 OpenAI 端点与验证)
+       ======================================================== -->
+  <div class="tab-panel" id="tab-client">
+    <section class="panel" id="client-config">
       <div class="panel-inner">
         <div class="section-head">
           <div>
-            <h2>账号池</h2>
-            <p>一键切换国内 / 国际号池；请求只会使用当前区域账号。</p>
+            <h2>OpenAI 兼容接入</h2>
+            <p>给下游客户端填 Base URL + API Key；不会暴露 CodeBuddy OAuth token。</p>
           </div>
           <div class="actions">
-            <div class="seg" id="poolSiteSeg" role="group" aria-label="号池区域">
-              <button type="button" data-site="domestic" id="btnPoolDomestic">国内</button>
-              <button type="button" data-site="global" id="btnPoolGlobal">国际</button>
+            <button class="ghost" id="btnRefreshClient" type="button">刷新接入信息</button>
+            <button class="teal" id="btnGenerateKey" type="button">生成 API Key</button>
+          </div>
+        </div>
+        <div class="field-grid" style="grid-template-columns:1fr 1fr">
+          <div>
+            <label for="openAiBaseUrl">Base URL</label>
+            <div class="copyline">
+              <input id="openAiBaseUrl" readonly placeholder="加载中…"/>
+              <button class="ghost" id="copyBaseUrl" type="button">复制</button>
+            </div>
+          </div>
+          <div>
+            <label for="openAiChatUrl">Chat Completions</label>
+            <div class="copyline">
+              <input id="openAiChatUrl" readonly placeholder="加载中…"/>
+              <button class="ghost" id="copyChatUrl" type="button">复制</button>
+            </div>
+          </div>
+          <div>
+            <label for="openAiApiKey">API Key（网关层）</label>
+            <div class="copyline">
+              <input id="openAiApiKey" class="secret-input" type="password" readonly placeholder="未配置"/>
+              <button class="ghost" id="copyApiKey" type="button">复制</button>
+            </div>
+          </div>
+          <div>
+            <label for="openAiModel">推荐模型</label>
+            <div class="copyline">
+              <input id="openAiModel" readonly value="auto"/>
+              <button class="ghost" id="copyModel" type="button">复制</button>
             </div>
           </div>
         </div>
-        <p class="seg-hint" id="poolSiteHint">当前号池：—</p>
-        <div id="accounts"></div>
+        <div class="secret-hint" id="clientConfigHint">API Key 点击复制时才会读取明文。生成的新 Key 仅当前进程生效，重启需写入 CODEBUDDY_PROXY_API_KEY。</div>
       </div>
     </section>
+  </div>
 
+  <!-- ========================================================
+       TAB 04: 模型与诊断 (专注模型芯片与底层 JSON)
+       ======================================================== -->
+  <div class="tab-panel" id="tab-models">
     <section class="panel">
       <div class="panel-inner">
         <div class="section-head">
           <div>
-            <h2>可用模型</h2>
+            <h2>可用模型编目</h2>
             <p>展示上游模型名（不含 codebuddy/ 前缀）；点击模型芯片可复制。</p>
           </div>
         </div>
@@ -387,7 +486,7 @@ pre{
       <div class="panel-inner">
         <div class="section-head">
           <div>
-            <h2>运行快照</h2>
+            <h2>运行快照诊断</h2>
             <p>完整 status JSON，便于排障。</p>
           </div>
         </div>
@@ -409,6 +508,30 @@ pre{
 
 <script>
 const $ = (id) => document.getElementById(id);
+
+/* 切页逻辑 (Tab Switcher) */
+function switchTab(tabId){
+  document.querySelectorAll('.tab-link').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+  var btn = document.querySelector('.tab-link[data-tab="' + tabId + '"]');
+  if (btn) btn.classList.add('active');
+  var p = $(tabId);
+  if (p) p.classList.add('active');
+}
+document.querySelectorAll('.tab-link').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    switchTab(btn.getAttribute('data-tab'));
+  });
+});
+if (window.location.hash === '#codebuddy') {
+  switchTab('tab-pool');
+} else if (window.location.hash === '#client-config') {
+  switchTab('tab-client');
+}
+window.addEventListener('hashchange', function(){
+  if (window.location.hash === '#codebuddy') switchTab('tab-pool');
+  if (window.location.hash === '#client-config') switchTab('tab-client');
+});
 
 async function api(path, opts={}) {
   const headers = Object.assign({'content-type':'application/json'}, opts.headers||{});
@@ -450,7 +573,7 @@ function renderAccounts(summary, activeSite) {
   const accounts = (summary && summary.accounts) || [];
   activeSite = normalizeSite(activeSite || (summary && summary.activeSite) || '');
   if (!accounts.length) {
-    box.innerHTML = '<div class="empty">暂无账号。请先在右侧完成 OAuth 登录。</div>';
+    box.innerHTML = '<div class="empty">暂无账号。请先在下方完成 OAuth 登录。</div>';
     return;
   }
   box.innerHTML = accounts.map(function(a) {
@@ -828,7 +951,7 @@ a{
   color:var(--bg);background:var(--fg);border:1px solid var(--fg);
   transition:background .2s, color .2s;
 }
-a:hover{background:var(--fg);color:var(--bg);opacity:.9}
+a:hover{background:#333;color:var(--bg)}
 a:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 </style>
 </head>
