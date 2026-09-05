@@ -105,6 +105,7 @@ func New(cfg config.Config, logger *slog.Logger) *Service {
 		logger = slog.Default()
 	}
 	p := provider.NewClient(cfg)
+	p.Log = logger
 	svc := &Service{
 		Pool:     accounts.NewPool(cfg.AccountsPath),
 		Provider: p,

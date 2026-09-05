@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -21,6 +22,8 @@ import (
 type Client struct {
 	HTTP       *http.Client
 	IDEVersion string
+	// Log 上游失败排障日志；为空时回退 slog.Default()。网关 New 时注入进程 logger。
+	Log *slog.Logger
 }
 
 func NewClient(cfg config.Config) *Client {
@@ -51,6 +54,7 @@ func NewClient(cfg config.Config) *Client {
 			Transport: transport,
 		},
 		IDEVersion: strutil.First(cfg.IDEVersion, config.DefaultIDEVersion),
+		Log:        slog.Default(),
 	}
 }
 
@@ -384,7 +388,7 @@ func EnsureUpstreamMessages(messages []map[string]any) []map[string]any {
 		if name, ok := message["name"]; ok {
 			item["name"] = name
 		}
-		item["content"] = flattenContent(message["content"])
+		item["content"] = sanitizeUpstreamContent(role, flattenContent(message["content"]))
 		hasToolCalls := false
 		if tc, ok := item["tool_calls"].([]any); ok && len(tc) > 0 {
 			hasToolCalls = true
@@ -402,6 +406,22 @@ func EnsureUpstreamMessages(messages []map[string]any) []map[string]any {
 		out = append(out, item)
 	}
 	return out
+}
+
+// sanitizeUpstreamContent 改写已知触发上游 11128 的 system 指纹。
+// 上游风控对 "Main branch (you will usually use this for PRs):" 整串敏感
+// （ZCode System Context 注入），缺括号/冒号/值任一件即放行。
+// 改写保留分支名语义，仅去括号注解。仅处理 system：用户原文与工具
+// 结果必须原样透传，避免静默改变用户请求语义。
+func sanitizeUpstreamContent(role string, content any) any {
+	text, ok := content.(string)
+	if !ok || role != "system" {
+		return content
+	}
+	if !strings.Contains(text, "Main branch") || !strings.Contains(text, "for PRs") {
+		return content
+	}
+	return strings.ReplaceAll(text, " (you will usually use this for PRs)", "")
 }
 
 func flattenContent(content any) any {
@@ -492,7 +512,9 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return Result{}, fmt.Errorf("CodeBuddy chat completion failed with %d: %s [region=%s site=%s endpoint=%s domain=%s model=%s]", resp.StatusCode, extractErrorMessage(raw, resp.StatusCode), region, config.NormalizeSite(opts.Site), endpoint, domain, model)
+		msg := extractErrorMessage(raw, resp.StatusCode)
+		c.logUpstreamFailure(msg, resp.StatusCode, body, opts, endpoint, domain, region, model)
+		return Result{}, fmt.Errorf("CodeBuddy chat completion failed with %d: %s [region=%s site=%s endpoint=%s domain=%s model=%s]", resp.StatusCode, msg, region, config.NormalizeSite(opts.Site), endpoint, domain, model)
 	}
 
 	result, err := c.readSSE(resp.Body, opts)
@@ -500,12 +522,169 @@ func (c *Client) Complete(ctx context.Context, opts ChatOptions) (Result, error)
 		return Result{}, err
 	}
 	if len(result.Turn.Errors) > 0 {
+		c.logUpstreamFailure(result.Turn.Errors[0], resp.StatusCode, body, opts, endpoint, domain, region, model)
 		return Result{}, fmt.Errorf("%s", result.Turn.Errors[0])
 	}
 	result.DurationMs = time.Since(started).Milliseconds()
 	result.Status = resp.StatusCode
 	result.Model = model
 	return result, nil
+}
+
+// logUpstreamFailure 在上游拒绝（非 2xx）或流中报错时输出归一化请求指纹（WARN）。
+// 指纹脱敏：不含 token、无完整 prompt，只有字段形态与单条消息前 200 字预览；下游错误串保持不变。
+func (c *Client) logUpstreamFailure(upstreamMsg string, status int, body map[string]any, opts ChatOptions, endpoint, domain, region, model string) {
+	logger := slog.Default()
+	if c != nil && c.Log != nil {
+		logger = c.Log
+	}
+	logger.Warn("codebuddy upstream failure",
+		"status", status,
+		"upstreamMessage", strutil.Truncate(upstreamMsg, 300),
+		"region", region,
+		"site", config.NormalizeSite(opts.Site),
+		"endpoint", endpoint,
+		"domain", domain,
+		"model", model,
+		"request", DescribeUpstreamBody(body),
+	)
+}
+
+// DescribeUpstreamBody 返回归一化上游请求体的脱敏指纹。
+// 上游 4xx/5xx（11128/11101 等）排障时，直接看出可疑字段与消息形态。
+func DescribeUpstreamBody(body map[string]any) map[string]any {
+	fp := map[string]any{}
+	if len(body) == 0 {
+		return fp
+	}
+	fp["model"] = fmt.Sprint(body["model"])
+	if v, ok := body["temperature"]; ok && v != nil {
+		fp["temperature"] = fmt.Sprint(v)
+	}
+	if v, ok := body["top_p"]; ok && v != nil {
+		fp["top_p"] = fmt.Sprint(v)
+	}
+	if v, ok := body["max_completion_tokens"]; ok && v != nil {
+		fp["max_completion_tokens"] = fmt.Sprint(v)
+	}
+	if choice, ok := body["tool_choice"]; ok && choice != nil {
+		fp["tool_choice"] = strutil.Truncate(fmt.Sprint(choice), 80)
+	}
+	if reasoning, ok := body["reasoning"]; ok && reasoning != nil {
+		fp["reasoning"] = strutil.Truncate(fmt.Sprint(reasoning), 200)
+	}
+	if effort, ok := body["reasoning_effort"]; ok && effort != nil {
+		fp["reasoning_effort"] = fmt.Sprint(effort)
+	}
+	if thinking, ok := body["thinking"]; ok && thinking != nil {
+		fp["thinking"] = strutil.Truncate(fmt.Sprint(thinking), 200)
+	}
+	if tools, ok := body["tools"]; ok && tools != nil {
+		names := toolNames(tools)
+		fp["toolsCount"] = len(names)
+		if len(names) > 0 {
+			fp["toolNames"] = names
+		}
+		if raw, err := json.Marshal(tools); err == nil {
+			fp["toolsJSONLen"] = len(raw)
+		}
+	}
+	msgs := toMessageList(body["messages"])
+	roles := make([]string, 0, len(msgs))
+	details := make([]map[string]any, 0, len(msgs))
+	totalChars := 0
+	for _, msg := range msgs {
+		role := fmt.Sprint(msg["role"])
+		roles = append(roles, role)
+		detail := map[string]any{"role": role}
+		switch content := msg["content"].(type) {
+		case string:
+			totalChars += len(content)
+			detail["contentKind"] = "string"
+			detail["contentLen"] = len(content)
+			if preview := strutil.Truncate(content, 200); preview != "" {
+				detail["preview"] = preview
+			}
+		case []any:
+			detail["contentKind"] = "structured_array"
+			detail["contentLen"] = len(content)
+			detail["partTypes"] = partTypes(content)
+		case nil:
+			detail["contentKind"] = "nil"
+		default:
+			detail["contentKind"] = fmt.Sprintf("%T", content)
+		}
+		if tc, ok := msg["tool_calls"].([]any); ok && len(tc) > 0 {
+			detail["toolCallsCount"] = len(tc)
+			detail["toolCallNames"] = toolNames(tc)
+		}
+		if id, ok := msg["tool_call_id"]; ok && strutil.First(fmt.Sprint(id)) != "" {
+			detail["hasToolCallID"] = true
+		}
+		if name, ok := msg["name"]; ok && strutil.First(fmt.Sprint(name)) != "" {
+			detail["name"] = strutil.Truncate(fmt.Sprint(name), 80)
+		}
+		details = append(details, detail)
+	}
+	fp["messageCount"] = len(msgs)
+	fp["roles"] = roles
+	fp["messages"] = details
+	fp["totalChars"] = totalChars
+	return fp
+}
+
+func toMessageList(messages any) []map[string]any {
+	switch v := messages.(type) {
+	case []map[string]any:
+		return v
+	case []any:
+		out := make([]map[string]any, 0, len(v))
+		for _, raw := range v {
+			if m, ok := raw.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// toolNames 提取 tools / tool_calls 中的 function 名（只记名，不记参数）。
+func toolNames(items any) []string {
+	arr, ok := items.([]any)
+	if !ok {
+		return nil
+	}
+	names := make([]string, 0, len(arr))
+	for _, raw := range arr {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if fn, ok := m["function"].(map[string]any); ok {
+			if name := strutil.First(fmt.Sprint(fn["name"])); name != "" {
+				names = append(names, name)
+				continue
+			}
+		}
+		if name := strutil.First(fmt.Sprint(m["name"])); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func partTypes(parts []any) []string {
+	types := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if m, ok := part.(map[string]any); ok {
+			types = append(types, strutil.First(fmt.Sprint(m["type"]), "map"))
+			continue
+		}
+		types = append(types, fmt.Sprintf("%T", part))
+	}
+	return types
 }
 
 func (c *Client) readSSE(body io.Reader, opts ChatOptions) (Result, error) {

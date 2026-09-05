@@ -6,6 +6,25 @@
 
 ---
 
+## v0.3.10 · 2026-09-05 · 上游 11128 排障与小规模适配
+
+### 根因
+
+- ZCode agent 每次请求在 `system` 中注入 `System Context` 块（含 `Main branch (you will usually use this for PRs): <branch>`），腾讯上游 `copilot.tencent.com` 将该整串判为非官方 CLI 通道，返回 `400 + 11128 Illegal API invocation from an unapproved channel`。经二分验证：该三件套（`Main branch` + 括号注解 + 冒号）齐备即触发，缺任一件即放行；git 状态文本本身、`role=developer`、工具数、`thinking`、`max_completion_tokens` 均已证伪。
+
+### 排障
+
+- 上游非 2xx / 流中 `upstream_error` 时进程 WARN 日志 `codebuddy upstream failure` 输出脱敏请求指纹（role 序列 / 工具名 / thinking / reasoning / 单消息 200 字预览，不含 token 与完整 prompt），`docs/operations/runbook.md` 同步。
+- `gateway.New` 向 provider 注入进程 logger，避免与 `slog.Default()` 错配。
+
+### 适配
+
+- `system` 消息去除 ` (you will usually use this for PRs)` 括号注解（保留分支名，`Main branch: <branch>`），用户原文与工具结果原样透传。
+
+下载：https://github.com/wnddd839/codebuddyapi-proxy/releases/tag/v0.3.10
+
+---
+
 ## v0.3.9 · 2026-09-03 · 管理台章节切页
 
 ### 管理台

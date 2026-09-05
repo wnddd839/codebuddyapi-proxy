@@ -170,6 +170,90 @@ func TestMapSSEOpenAIDelta(t *testing.T) {
 	}
 }
 
+func TestDescribeUpstreamBodyMasksPrompt(t *testing.T) {
+	body := map[string]any{
+		"model": "hy4-preview",
+		"messages": []map[string]any{
+			{"role": "system", "content": "You are a large language model trained by Microsoft."},
+			{"role": "user", "content": "hi"},
+		},
+		"temperature": 1.0,
+		"thinking":    map[string]any{"type": "enabled", "budget_tokens": 10000},
+		"tools": []any{
+			map[string]any{"type": "function", "function": map[string]any{"name": "bash", "arguments": "{}"}},
+		},
+	}
+	fp := provider.DescribeUpstreamBody(body)
+	if fp["model"] != "hy4-preview" {
+		t.Fatalf("model=%v", fp["model"])
+	}
+	roles, _ := fp["roles"].([]string)
+	if len(roles) != 2 || roles[0] != "system" || roles[1] != "user" {
+		t.Fatalf("roles=%v", fp["roles"])
+	}
+	names, _ := fp["toolNames"].([]string)
+	if len(names) != 1 || names[0] != "bash" {
+		t.Fatalf("toolNames=%v", fp["toolNames"])
+	}
+	msgs, _ := fp["messages"].([]map[string]any)
+	if len(msgs) != 2 {
+		t.Fatalf("messages=%v", fp["messages"])
+	}
+	preview, _ := msgs[0]["preview"].(string)
+	if len(preview) > 200 || preview == "" {
+		t.Fatalf("preview len=%d", len(preview))
+	}
+	if _, ok := fp["temperature"]; !ok {
+		t.Fatalf("temperature missing: %v", fp)
+	}
+}
+
+func TestEnsureUpstreamMessagesStripsPRsNote(t *testing.T) {
+	const trigger = "Main branch (you will usually use this for PRs): main"
+	out := provider.EnsureUpstreamMessages([]map[string]any{
+		{"role": "system", "content": trigger},
+		{"role": "assistant", "content": trigger},
+		{"role": "user", "content": trigger},
+	})
+	if len(out) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(out))
+	}
+	if out[0]["content"] != "Main branch: main" {
+		t.Fatalf("system not sanitized: %q", out[0]["content"])
+	}
+	if out[1]["content"] != trigger {
+		t.Fatalf("assistant must pass through: %q", out[1]["content"])
+	}
+	if out[2]["content"] != trigger {
+		t.Fatalf("user must pass through: %q", out[2]["content"])
+	}
+}
+
+func TestDescribeUpstreamBodyStructuredContent(t *testing.T) {
+	body := map[string]any{
+		"model": "hy4-preview",
+		"messages": []map[string]any{
+			{"role": "user", "content": []any{
+				map[string]any{"type": "text", "text": "hi"},
+				map[string]any{"type": "input_audio", "data": "xxx"},
+				"raw-string-part",
+			}},
+		},
+	}
+	fp := provider.DescribeUpstreamBody(body)
+	msgs, _ := fp["messages"].([]map[string]any)
+	if len(msgs) != 1 {
+		t.Fatalf("messages=%v", fp["messages"])
+	}
+	if msgs[0]["contentKind"] != "structured_array" {
+		t.Fatalf("contentKind=%v", msgs[0]["contentKind"])
+	}
+	parts, _ := msgs[0]["partTypes"].([]string)
+	if len(parts) != 3 || parts[0] != "text" || parts[1] != "input_audio" || parts[2] != "string" {
+		t.Fatalf("partTypes=%v", msgs[0]["partTypes"])
+	}
+}
+
 func TestEnsureUpstreamMessagesDropsEmpty(t *testing.T) {
 	out := provider.EnsureUpstreamMessages([]map[string]any{
 		{"role": "user", "content": ""},
